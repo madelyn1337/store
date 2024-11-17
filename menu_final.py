@@ -8,6 +8,9 @@ from pathlib import Path
 import urllib.request
 import subprocess
 import cv2
+import requests
+from bs4 import BeautifulSoup
+import os
 
 def is_admin():
     try:
@@ -55,9 +58,10 @@ def show_menu():
     print("2. Neofetch")
     print("3. Presets")
     print("4. Crop Tool")
-    print("5. 411 Website")
-    print("6. Exit")
-    return input("\nPlease select an option (1-6): ")
+    print("5. Movie Info")
+    print("6. 411 Website")
+    print("7. Exit")
+    return input("\nPlease select an option (1-7): ")
 
 def show_installer_menu():
     clear_screen()
@@ -381,62 +385,96 @@ def select_correct_version(width, height, aspect_ratio):
         print(f"Error calculating dimensions: {e}")
         return None, None
 
-def handle_crop_tool():
-    clear_screen()
-    print("\n=== Crop Tool ===")
-    
-    # Get movie file
-    filepath = input("Enter the full path to your movie file: ")
-    if not os.path.exists(filepath):
-        print("File not found!")
-        input("\nPress Enter to continue...")
-        return
-    
-    # Get video resolution
-    width, height = get_video_info(filepath)
-    if not width or not height:
-        print("Could not determine video resolution!")
-        input("\nPress Enter to continue...")
-        return
-    
-    # Extract movie name and search IMDb
-    movie_name = os.path.basename(filepath)
-    print(f"\nSearching IMDb for: {movie_name}")
-    
+def get_movie_details(url):
     try:
-        from test import get_imdb_id, get_technical_details
-        imdb_id = get_imdb_id(movie_name)
-        if not imdb_id:
-            imdb_id = input("Could not find IMDb ID. Please enter it manually (ttXXXXXXX): ")
-        
-        aspect_ratios, negative_formats = get_technical_details(imdb_id)
-        
-        # Display found information
-        print(f"\nCurrent Resolution: {width}x{height}")
-        if aspect_ratios:
-            print("\nFound Aspect Ratios:")
-            for i, (ratio, context) in enumerate(aspect_ratios, 1):
-                print(f"{i}. {ratio} {context}")
-            
-            choice = input("\nSelect aspect ratio number (or press Enter to skip): ")
-            if choice.isdigit() and 1 <= int(choice) <= len(aspect_ratios):
-                selected_ratio = aspect_ratios[int(choice)-1][0]
-                corrected_width, corrected_height = select_correct_version(width, height, selected_ratio)
-                if corrected_width and corrected_height:
-                    print(f"\nRecommended crop dimensions: {corrected_width}x{corrected_height}")
-                    
-                    # Update registry with crop command
-                    reg_path = r"SOFTWARE\DebugMode\FrameServer"
-                    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, reg_path, 0, winreg.KEY_WRITE) as key:
-                        crop_command = f'ffmpeg -i pipe: -vf "crop={corrected_width}:{corrected_height}" -c:v libx264 -crf 18 output.mp4'
-                        winreg.SetValueEx(key, "commandToRunOnFsStart", 0, winreg.REG_SZ, crop_command)
-                    print("\nCrop command has been set!")
-        
+        # Fetch the page content
+        response = requests.get(url)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, 'html.parser')
+
+        details = {}
+
+        # Extract Video section
+        video_label = soup.find("span", class_="subheading", string="Video")
+        if video_label:
+            # Extract details following the "Video" header
+            video_details = []
+            sibling = video_label.find_next_sibling()
+            while sibling and sibling.name == "br":  # Traverse <br> siblings
+                if sibling.next_sibling and sibling.next_sibling.string:
+                    video_details.append(sibling.next_sibling.string.strip())
+                sibling = sibling.find_next_sibling()
+            details["Video"] = "\n".join(video_details) if video_details else "N/A"
+        else:
+            details["Video"] = "N/A"
+
+        # Extract Audio section
+        audio_label = soup.find("span", class_="subheading", string="Audio")
+        if audio_label:
+            audio_section = audio_label.find_next("div", id="shortaudio")
+            details["Audio"] = audio_section.get_text(strip=True, separator="\n") if audio_section else "N/A"
+        else:
+            details["Audio"] = "N/A"
+
+        return details
+
     except Exception as e:
-        print(f"Error in crop tool: {e}")
+        return {"Error": str(e)}
+
+def calculate_crop(details):
+    video_info = details.get("Video", "")
     
-    input("\nPress Enter to continue...")
-    clear_screen()
+    # Base widths for each resolution
+    resolutions = {
+        "2160p": 3840,
+        "1080p": 1920
+    }
+    
+    # Common aspect ratios with their names
+    aspect_ratios = {
+        "1.33": "4:3",
+        "1.37": "Academy",
+        "1.66": "5:3",
+        "1.78": "16:9",
+        "1.85": "Flat",
+        "1.90": "",
+        "2.00": "",
+        "2.35": "",
+        "2.37": "64:27",
+        "2.39": "DCI Scope",
+        "2.40": "Blu-Ray Scope",
+        "2.44": ""
+    }
+    
+    resolution = ""
+    aspect_ratio = ""
+    
+    for line in video_info.split("\n"):
+        if "1080p" in line:
+            resolution = "1080p"
+        elif "2160p" in line:
+            resolution = "2160p"
+        if ":" in line:
+            for ratio in aspect_ratios.keys():
+                if ratio in line:
+                    aspect_ratio = ratio
+                    break
+    
+    if resolution and aspect_ratio:
+        width = resolutions[resolution]
+        height = round(width / float(aspect_ratio))
+        
+        ratio_name = aspect_ratios[aspect_ratio]
+        ratio_display = f" ({ratio_name})" if ratio_name else ""
+        
+        print(f"\nResolution: {resolution}")
+        print(f"Aspect Ratio: {aspect_ratio}:1{ratio_display}")
+        print("\nRecommended timeline settings:")
+        print(f"Width: {width}")
+        print(f"Height: {height}")
+    else:
+        print("Could not determine resolution or aspect ratio from the provided URL.")
+
 
 def main():
     run_as_admin()
@@ -502,13 +540,40 @@ def main():
         elif choice == "3":
             handle_presets()
         elif choice == "4":
-            handle_crop_tool()
+            clear_screen()
+            url = input("\nEnter the movie URL from scenepacks.com: ")
+            if url:
+                details = get_movie_details(url)
+                if "Error" not in details:
+                    calculate_crop(details)
+                else:
+                    print(f"\nError fetching movie details: {details['Error']}")
+            input("\nPress Enter to continue...")
+            clear_screen()
+            
         elif choice == "5":
+            clear_screen()
+            url = input("\nEnter the movie URL from scenepacks.com: ")
+            if url:
+                details = get_movie_details(url)
+                if "Error" not in details:
+                    print("\nVideo Details:")
+                    print(details["Video"])
+                    print("\nAudio Details:")
+                    print(details["Audio"])
+                else:
+                    print(f"\nError fetching movie details: {details['Error']}")
+            input("\nPress Enter to continue...")
+            clear_screen()
+            
+        elif choice == "6":
             open_website()
             clear_screen()
-        elif choice == "6":
+            
+        elif choice == "7":
             print("\nThank you for using the app. Goodbye!")
             sys.exit(0)
+            
         else:
             print("\nInvalid option. Please try again.")
             input("Press Enter to continue...")
