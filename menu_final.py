@@ -11,6 +11,7 @@ import cv2
 import requests
 from bs4 import BeautifulSoup
 import os
+import json
 
 def is_admin():
     try:
@@ -52,16 +53,18 @@ def neofetch():
         return
 
 def show_menu():
-    clear_screen()
+    os.system('mode con: cols=120 lines=40')  # Make window bigger
+    neofetch()  # Pin neofetch on top
     print("\n=== Main Menu ===")
     print("1. Installation Options")
     print("2. Neofetch")
-    print("3. Presets")
+    print("3. Set Preset")
     print("4. Crop Tool")
-    print("5. Movie Info")
-    print("6. 411 Website")
-    print("7. Exit")
-    return input("\nPlease select an option (1-7): ")
+    print("5. Media Info")
+    print("6. MKV to MP4")
+    print("7. 411 Website")
+    print("8. Exit")
+    return input("\nPlease select an option (1-8): ")
 
 def show_installer_menu():
     clear_screen()
@@ -135,7 +138,7 @@ def check_installations():
     clear_screen()
 
 def open_website():
-    website_link = "https://scenepacks.com/" 
+    website_link = "https://www.blu-ray.com/" 
     os.system(f'start {website_link}')
     input("\nPress Enter to continue...")
 
@@ -344,29 +347,44 @@ def handle_presets():
     print(f"\nResolution: {resolution}")
     
     print("\nSelect Codec:")
-    print("1. H.264")
-    print("2. H.265 (HEVC)")
-    codec_choice = input("Select codec (1-2): ")
+    print("1. H.265 (HEVC)")
+    codec_choice = input("Select codec (1): ")
     
-    if codec_choice not in ["1", "2"]:
+    if codec_choice != "1":
         print("Invalid codec selection!")
         input("\nPress Enter to continue...")
         return
     
-    codec = "h264" if codec_choice == "1" else "h265"
-    print(f"\nCodec: {codec}")
+    codec = "h265"
     
-    # Ask for grain level
     print("\nGrain Levels:")
     print("1. No Grain")
     print("2. With Grain")
     print("3. Heavy Grain")
-    grain_level = input("Select grain level (1-3): ")
+    print("4. Animation")
+    grain_level = input("Select grain level (1-4): ")
     
     try:
         command = "ffmpeg -i \"C:/DMFS/virtual/*.avi\" "
         
-        grain_text = "nograin" if grain_level == "1" else "grain" if grain_level == "2" else "heavygrain"
+        if grain_level == "1":  # No grain
+            command += "-tune film "
+        elif grain_level == "2":  # With grain
+            command += "-tune grain "
+            if codec == "h264":
+                command += "-deblock -2:-2 "
+            else:
+                command += "-x265-params deblock=-2:-2 "
+        elif grain_level == "3":  # Heavy grain
+            command += "-tune grain "
+            if codec == "h264":
+                command += "-deblock -3:-3 "
+            else:
+                command += "-x265-params deblock=-3:-3 "
+        elif grain_level == "4":  # Animation
+            command += "-tune animation "
+        
+        grain_text = "nograin" if grain_level == "1" else "grain" if grain_level == "2" else "heavygrain" if grain_level == "3" else "animation"
         output_name = f"encoded_{resolution}_{codec}_{grain_text}.mkv"
         
         if codec == "h264":
@@ -381,22 +399,6 @@ def handle_presets():
                 command += "-crf 20 "
             else:  # 4K
                 command += "-crf 22 "
-        
-        # Add grain parameters
-        if grain_level == "1":  # No grain
-            command += "-tune film "
-        elif grain_level == "2":  # With grain
-            command += "-tune grain "
-            if codec == "h264":
-                command += "-deblock -2:-2 "
-            else:
-                command += "-x265-params deblock=-2:-2 "
-        else:  # Heavy grain
-            command += "-tune grain "
-            if codec == "h264":
-                command += "-deblock -3:-3 "
-            else:
-                command += "-x265-params deblock=-3:-3 "
         
         # Add output parameters with dynamic filename
         command += f"-map 0 -c:a copy -c:s copy {output_name}"
@@ -536,11 +538,81 @@ def calculate_crop(details):
     else:
         print("Could not determine resolution or aspect ratio from the provided URL.")
 
+def initialize_config():
+    config_dir = Path(os.getenv('LOCALAPPDATA')) / '411Config'
+    config_file = config_dir / 'settings.json'
+    
+    if not config_file.exists():
+        config_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create 411media folder
+        videos_dir = Path(os.path.expandvars('%HOMEPATH%')) / 'Videos' / '411media'
+        videos_dir.mkdir(parents=True, exist_ok=True)
+        
+        print("\n=== First Time Setup ===")
+        print("\nDefault paths have been created:")
+        print(f"MP4 Output: {videos_dir}")
+        
+        # Get encoded videos output path
+        print("\nWhere would you like encoded videos to be saved?")
+        print("Press Enter to use default location (Videos/411media)")
+        encoded_path = input("Path: ").strip() or str(videos_dir)
+        
+        config = {
+            'mp4_output': str(videos_dir),
+            'encoded_output': encoded_path
+        }
+        
+        with open(config_file, 'w') as f:
+            json.dump(config, f, indent=4)
+            
+        return config
+    else:
+        with open(config_file, 'r') as f:
+            return json.load(f)
+
+def convert_mkv_to_mp4(config):
+    print("\n=== MKV to MP4 Converter ===")
+    print("\nDrag and drop your MKV file here (or paste the full path):")
+    input_file = input().strip('"')
+    
+    if not os.path.exists(input_file):
+        print("File not found!")
+        input("\nPress Enter to continue...")
+        return
+        
+    output_dir = Path(config['mp4_output'])
+    output_file = output_dir / f"{Path(input_file).stem}.mp4"
+    
+    # Get audio stream info
+    probe_cmd = f'ffprobe -v error -select_streams a -show_entries stream=channels -of json "{input_file}"'
+    result = subprocess.run(probe_cmd, capture_output=True, text=True)
+    audio_info = json.loads(result.stdout)
+    
+    # Find 5.1 track if available
+    surround_track = None
+    for idx, stream in enumerate(audio_info.get('streams', [])):
+        if stream.get('channels') == 6:
+            surround_track = idx
+            break
+    
+    audio_map = f"-map 0:a:{surround_track}" if surround_track is not None else "-map 0:a:0"
+    
+    cmd = f'ffmpeg -i "{input_file}" -c:v copy {audio_map} -c:a aac -b:a 576k -sn "{output_file}"'
+    
+    try:
+        subprocess.run(cmd, check=True)
+        print(f"\nConversion complete! File saved to: {output_file}")
+    except subprocess.CalledProcessError as e:
+        print(f"\nError during conversion: {e}")
+    
+    input("\nPress Enter to continue...")
+    clear_screen()
 
 def main():
     run_as_admin()
-    neofetch()
-
+    config = initialize_config()
+    
     while True:
         choice = show_menu()
         
@@ -602,7 +674,7 @@ def main():
             handle_presets()
         elif choice == "4":
             clear_screen()
-            url = input("\nEnter the movie URL from scenepacks.com: ")
+            url = input("\nEnter the movie URL from bluray.com: ")
             if url:
                 details = get_movie_details(url)
                 if "Error" not in details:
@@ -614,7 +686,7 @@ def main():
             
         elif choice == "5":
             clear_screen()
-            url = input("\nEnter the movie URL from scenepacks.com: ")
+            url = input("\nEnter the movie URL from bluray.com: ")
             if url:
                 details = get_movie_details(url)
                 if "Error" not in details:
@@ -628,10 +700,12 @@ def main():
             clear_screen()
             
         elif choice == "6":
+            convert_mkv_to_mp4(config)
+        elif choice == "7":
             open_website()
             clear_screen()
             
-        elif choice == "7":
+        elif choice == "8":
             print("\nThank you for using the app. Goodbye!")
             sys.exit(0)
             
