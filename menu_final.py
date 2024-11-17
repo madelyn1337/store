@@ -136,7 +136,6 @@ def check_installations():
 
 def open_website():
     website_link = "https://scenepacks.com/" 
-    print("\nOpening website in your browser...")
     os.system(f'start {website_link}')
     input("\nPress Enter to continue...")
 
@@ -174,11 +173,8 @@ def install_dokan():
         # Download Dokan MSI
         dokan_url = "https://github.com/dokan-dev/dokany/releases/download/v1.5.0.3000/Dokan_x64.msi"
         msi_path = "dokan_temp.msi"
-        print("Downloading Dokan...")
         urllib.request.urlretrieve(dokan_url, msi_path)
         
-        # Silent install using msiexec
-        print("Installing Dokan silently...")
         install_command = f'msiexec /i "{msi_path}" /qn'
         os.system(install_command)
         
@@ -199,13 +195,11 @@ def install_dmfs():
     
     if not dmfs_dir.exists():
         dmfs_dir.mkdir(parents=True)
-        print(f"Created directory: {dmfs_dir}")
     else:
         print(f"Directory already exists: {dmfs_dir}")
         
     if not adobe_dir.exists():
         adobe_dir.mkdir(parents=True) 
-        print(f"Created directory: {adobe_dir}")
     else:
         print(f"Directory already exists: {adobe_dir}")
 
@@ -213,13 +207,9 @@ def install_dmfs():
     zip_url = "https://github.com/madelyn1337/store/raw/refs/heads/main/FrameServer.zip"
     
     try:
-        # Download extension
-        print("Downloading extension...")
         extension_path = adobe_dir / "dfscPremiereOut.prm"
         urllib.request.urlretrieve(extension_url, extension_path)
         
-        # Download and extract zip
-        print("Downloading and extracting DMFS files...")
         zip_path = "FrameServer.zip"
         urllib.request.urlretrieve(zip_url, zip_path)
         
@@ -231,6 +221,20 @@ def install_dmfs():
         
     except Exception as e:
         print(f"Error installing DMFS: {e}")
+    
+    try:
+        # Set required registry keys
+        reg_path = r"SOFTWARE\DebugMode\FrameServer"
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, reg_path) as key:
+            winreg.SetValueEx(key, "runCommandOnFsStart", 0, winreg.REG_DWORD, 1)
+            winreg.SetValueEx(key, "endAfterRunningCommand", 0, winreg.REG_DWORD, 1)
+            winreg.SetValueEx(key, "pcmAudioInAvi", 0, winreg.REG_DWORD, 1) 
+
+            
+    except Exception as e:
+        print(f"Error setting registry keys: {e}")
+        
+    print("DMFS installation complete!")
 
 def download_ffmpeg(safe_install=True):
     url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
@@ -302,52 +306,109 @@ def handle_presets():
     clear_screen()
     print("\n=== FFmpeg Presets ===")
     
-    # Get movie file
-    filepath = input("Enter the full path to your movie file: ")
-    if not os.path.exists(filepath):
-        print("File not found!")
+    # Ask for resolution
+    print("\nSelect Video Resolution:")
+    print("1. 1080p")
+    print("2. 4K")
+    print("3. I don't know (detect from file)")
+    res_choice = input("\nSelect option (1-3): ")
+    
+    resolution = None
+    if res_choice in ["1", "2"]:
+        resolution = "1080p" if res_choice == "1" else "4K"
+    elif res_choice == "3":
+        print("\nDrag and drop your video file here (or paste the full path):")
+        filepath = input().strip('"')  # Remove quotes if present from drag and drop
+        
+        if not os.path.exists(filepath):
+            print("File not found!")
+            input("\nPress Enter to continue...")
+            return
+            
+        width, height = get_video_info(filepath)
+        if not width or not height:
+            print("Could not determine video resolution!")
+            input("\nPress Enter to continue...")
+            return
+            
+        resolution = "4K" if height >= 2160 else "1080p" if height >= 1080 else "Other"
+        if resolution == "Other":
+            print("Video resolution not supported (must be 1080p or 4K)")
+            input("\nPress Enter to continue...")
+            return
+    else:
+        print("Invalid option selected!")
+        input("\nPress Enter to continue...")
+        return
+        
+    print(f"\nResolution: {resolution}")
+    
+    print("\nSelect Codec:")
+    print("1. H.264")
+    print("2. H.265 (HEVC)")
+    codec_choice = input("Select codec (1-2): ")
+    
+    if codec_choice not in ["1", "2"]:
+        print("Invalid codec selection!")
         input("\nPress Enter to continue...")
         return
     
-    # Get video resolution
-    width, height = get_video_info(filepath)
-    if not width or not height:
-        print("Could not determine video resolution!")
-        input("\nPress Enter to continue...")
-        return
+    codec = "h264" if codec_choice == "1" else "h265"
+    print(f"\nCodec: {codec}")
     
-    # Extract movie name and search IMDb
-    movie_name = os.path.basename(filepath)
-    print(f"\nSearching IMDb for: {movie_name}")
+    # Ask for grain level
+    print("\nGrain Levels:")
+    print("1. No Grain")
+    print("2. With Grain")
+    print("3. Heavy Grain")
+    grain_level = input("Select grain level (1-3): ")
     
     try:
-        # Use functions from test.py
-        from test import get_imdb_id, get_technical_details
-        imdb_id = get_imdb_id(movie_name)
-        if not imdb_id:
-            imdb_id = input("Could not find IMDb ID. Please enter it manually (ttXXXXXXX): ")
+        command = "ffmpeg -i \"C:/DMFS/virtual/*.avi\" "
         
-        aspect_ratios, negative_formats = get_technical_details(imdb_id)
+        grain_text = "nograin" if grain_level == "1" else "grain" if grain_level == "2" else "heavygrain"
+        output_name = f"encoded_{resolution}_{codec}_{grain_text}.mkv"
         
-        # Display found information
-        print(f"\nVideo Resolution: {width}x{height}")
-        print("Aspect Ratios:", ", ".join([ar[0] for ar in aspect_ratios]) if aspect_ratios else "Unknown")
-        print("Format:", ", ".join(negative_formats) if negative_formats else "Unknown")
+        if codec == "h264":
+            command += "-c:v libx264 -preset medium "
+            if resolution == "1080p":
+                command += "-crf 16 "
+            else:  # 4K
+                command += "-crf 18 "
+        else:  # h265
+            command += "-c:v libx265 -preset medium "
+            if resolution == "1080p":
+                command += "-crf 20 "
+            else:  # 4K
+                command += "-crf 22 "
         
-        # Ask for grain level
-        print("\nGrain Levels:")
-        print("1. No Grain")
-        print("2. With Grain")
-        print("3. Heavy Grain")
-        grain_level = input("Select grain level (1-3): ")
+        # Add grain parameters
+        if grain_level == "1":  # No grain
+            command += "-tune film "
+        elif grain_level == "2":  # With grain
+            command += "-tune grain "
+            if codec == "h264":
+                command += "-deblock -2:-2 "
+            else:
+                command += "-x265-params deblock=-2:-2 "
+        else:  # Heavy grain
+            command += "-tune grain "
+            if codec == "h264":
+                command += "-deblock -3:-3 "
+            else:
+                command += "-x265-params deblock=-3:-3 "
         
-        # Update registry with placeholder command
+        # Add output parameters with dynamic filename
+        command += f"-map 0 -c:a copy -c:s copy {output_name}"
+        
+        # Update registry with constructed command
         reg_path = r"SOFTWARE\DebugMode\FrameServer"
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, reg_path, 0, winreg.KEY_WRITE) as key:
-            placeholder_command = "ffmpeg -placeholder command"  # Replace with actual preset commands
-            winreg.SetValueEx(key, "commandToRunOnFsStart", 0, winreg.REG_SZ, placeholder_command)
+            winreg.SetValueEx(key, "commandToRunOnFsStart", 0, winreg.REG_SZ, command)
         
         print("\nPreset applied successfully!")
+        print(f"Command: {command}")
+        print(f"Output will be saved as: {output_name}")
         
     except Exception as e:
         print(f"Error applying preset: {e}")
