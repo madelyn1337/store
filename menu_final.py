@@ -143,22 +143,27 @@ def open_website():
     input("\nPress Enter to continue...")
 
 def is_ffmpeg_installed():
+    required_files = ['ffmpeg.exe', 'ffprobe.exe', 'ffplay.exe']
+    
+    # Check PATH locations
     paths = os.environ["PATH"].split(os.pathsep)
     for path in paths:
-        ffmpeg_path = os.path.join(path, "ffmpeg.exe")
-        if os.path.exists(ffmpeg_path):
+        if all(os.path.exists(os.path.join(path, file)) for file in required_files):
             return True
-            
-    program_files_path = Path("C:/Program Files/ffmpeg/ffmpeg.exe")
-    if program_files_path.exists():
+    
+    # Check Program Files
+    program_files_path = Path("C:/Program Files/ffmpeg")
+    if all((program_files_path / file).exists() for file in required_files):
         return True
-        
-    system32_path = Path("C:/Windows/System32/ffmpeg.exe")
-    if system32_path.exists():
+    
+    # Check System32
+    system32_path = Path("C:/Windows/System32")
+    if all((system32_path / file).exists() for file in required_files):
         return True
-
-    c_path = Path("C:/ffmpeg/ffmpeg.exe")
-    if c_path.exists():
+    
+    # Check C:/ffmpeg
+    c_path = Path("C:/ffmpeg")
+    if all((c_path / file).exists() for file in required_files):
         return True
 
     return False
@@ -254,6 +259,8 @@ def download_ffmpeg(safe_install=True):
     
     print("Download complete. Extracting...")
     
+    required_files = ['ffmpeg.exe', 'ffprobe.exe', 'ffplay.exe']
+    
     if safe_install:
         install_dir = Path("C:/Program Files/ffmpeg")
         install_dir.mkdir(parents=True, exist_ok=True)
@@ -263,17 +270,22 @@ def download_ffmpeg(safe_install=True):
         
         bin_path = Path("ffmpeg_temp/ffmpeg-master-latest-win64-gpl/bin")
         for file in bin_path.glob('*'):
-            dest = install_dir / file.name
-            if dest.exists():
-                dest.unlink()
-            file.rename(dest)
+            if file.name in required_files:  # Only move required executables
+                dest = install_dir / file.name
+                if dest.exists():
+                    dest.unlink()
+                file.rename(dest)
         
         add_to_path(str(install_dir))
     else:
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             zip_ref.extractall("ffmpeg_temp")
         
-        os.system('move ffmpeg_temp\\ffmpeg-master-latest-win64-gpl\\bin\\* C:\\Windows\\System32')
+        # Move all required files to System32
+        for file in required_files:
+            source = f"ffmpeg_temp\\ffmpeg-master-latest-win64-gpl\\bin\\{file}"
+            if os.path.exists(source):
+                os.system(f'move "{source}" C:\\Windows\\System32')
     
     os.system('rmdir /S /Q ffmpeg_temp')
     os.remove(zip_path)
