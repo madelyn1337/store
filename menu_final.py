@@ -577,8 +577,6 @@ def calculate_crop(details):
     else:
         resolution = available_resolutions[0]
     
-    # Rest of the crop calculation code...
-    # [Previous crop calculation code remains unchanged]
 
 def initialize_config():
     # Update config directory path
@@ -724,10 +722,10 @@ def main():
             handle_presets()
         elif choice == "3":
             # Crop Tool
-            pass
+            calculate_crop()
         elif choice == "4":
             # Media Info
-            pass
+            get_movie_details()
         elif choice == "5":
             convert_mkv_to_mp4(config)
         elif choice == "6":
