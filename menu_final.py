@@ -42,43 +42,82 @@ def neofetch():
         with open(exe_path, 'wb') as f:
             f.write(response.content)
         
-        # Run neofetch in a separate window that stays open
-        subprocess.Popen([exe_path], creationflags=subprocess.CREATE_NEW_CONSOLE)
+        # Capture neofetch output
+        result = subprocess.run([exe_path], capture_output=True, text=True)
+        
+        # Split output into lines and center each line
+        lines = result.stdout.splitlines()
+        for line in lines:
+            print(center_text(line))
         
         os.remove(exe_path)
         
     except Exception as e:
         return
 
+def center_text(text, width=150):
+    """Center text within specified width"""
+    return text.center(width)
+
 def show_menu():
-    os.system('mode con: cols=120 lines=50')  # Make window bigger to fit both neofetch and menu
-    neofetch()  # Call neofetch first
-    print("\n=== Main Menu ===")
-    print("1. Installation Options")
-    print("2. Set Preset")
-    print("3. Crop Tool")
-    print("4. Media Info")
-    print("5. MKV to MP4")
-    print("6. 411 Website")
-    print("7. Exit")
-    return input("\nPlease select an option (1-7): ")
+    os.system('mode con: cols=150 lines=50')  # Set console size
+    os.system('cls')  # Clear screen before showing neofetch
+    
+    # Center neofetch by adding padding
+    neofetch_padding = "\n" * 2  # Add some padding before neofetch
+    print(neofetch_padding)
+    neofetch()
+    menu_padding = "\n" * 2  # Add padding between neofetch and menu
+    print(menu_padding)
+    
+    # Create a decorative border
+    border = "═" * 40
+    menu_width = 150  # Match console width
+
+    print(center_text(f"╔{border}╗"))
+    print(center_text("║            Main Menu            ║"))
+    print(center_text(f"╠{border}╣"))
+    print(center_text("║  1. Installation Options        ║"))
+    print(center_text("║  2. Set Preset                  ║"))
+    print(center_text("║  3. Crop Tool                   ║"))
+    print(center_text("║  4. Media Info                  ║"))
+    print(center_text("║  5. MKV to MP4                  ║"))
+    print(center_text("║  6. 411 Website                 ║"))
+    print(center_text("║  7. Exit                        ║"))
+    print(center_text(f"╚{border}╝"))
+    
+    return input(center_text("Please select an option (1-7): "))
 
 def show_installer_menu():
     clear_screen()
-    print("\n=== Installation Options ===")
-    print("1. Check Installed Components")
-    print("2. Install All Components")
-    print("3. Uninstall Components")
-    print("4. Back to Main Menu")
-    return input("\nPlease select an option (1-4): ")
+    border = "═" * 45
+    menu_width = 120
+
+    print("\n" + center_text(f"╔{border}╗"))
+    print(center_text("║            Installation Options            ║"))
+    print(center_text(f"╠{border}╣"))
+    print(center_text("║  1. Check Installed Components            ║"))
+    print(center_text("║  2. Install All Components                ║"))
+    print(center_text("║  3. Uninstall Components                  ║"))
+    print(center_text("║  4. Back to Main Menu                     ║"))
+    print(center_text(f"╚{border}╝"))
+    
+    return input(center_text("Please select an option (1-4): "))
 
 def show_uninstall_menu():
-    print("\n=== Uninstall Components ===")
-    print("1. Uninstall FFmpeg")
-    print("2. Uninstall DMFS")
-    print("3. Uninstall Both")
-    print("4. Back to Main Menu")
-    return input("\nPlease select an option (1-4): ")
+    border = "═" * 40
+    menu_width = 120
+
+    print("\n" + center_text(f"╔{border}╗"))
+    print(center_text("║         Uninstall Components         ║"))
+    print(center_text(f"╠{border}╣"))
+    print(center_text("║  1. Uninstall FFmpeg                ║"))
+    print(center_text("║  2. Uninstall DMFS                  ║"))
+    print(center_text("║  3. Uninstall Both                  ║"))
+    print(center_text("║  4. Back to Main Menu               ║"))
+    print(center_text(f"╚{border}╝"))
+    
+    return input(center_text("Please select an option (1-4): "))
 
 def uninstall_ffmpeg():
     print("\nUninstalling FFmpeg...")
@@ -678,46 +717,20 @@ def main():
                     clear_screen()
                     
         elif choice == "2":
-            neofetch()
-        elif choice == "3":
             handle_presets()
+        elif choice == "3":
+            # Crop Tool
+            pass
         elif choice == "4":
-            clear_screen()
-            url = input("\nEnter the movie URL from bluray.com: ")
-            if url:
-                details = get_movie_details(url)
-                if "Error" not in details:
-                    calculate_crop(details)
-                else:
-                    print(f"\nError fetching movie details: {details['Error']}")
-            input("\nPress Enter to continue...")
-            clear_screen()
-            
+            # Media Info
+            pass
         elif choice == "5":
-            clear_screen()
-            url = input("\nEnter the movie URL from bluray.com: ")
-            if url:
-                details = get_movie_details(url)
-                if "Error" not in details:
-                    print("\nVideo Details:")
-                    print(details["Video"])
-                    print("\nAudio Details:")
-                    print(details["Audio"])
-                else:
-                    print(f"\nError fetching movie details: {details['Error']}")
-            input("\nPress Enter to continue...")
-            clear_screen()
-            
-        elif choice == "6":
             convert_mkv_to_mp4(config)
-        elif choice == "7":
+        elif choice == "6":
             open_website()
-            clear_screen()
-            
-        elif choice == "8":
+        elif choice == "7":
             print("\nThank you for using the app. Goodbye!")
             sys.exit(0)
-            
         else:
             print("\nInvalid option. Please try again.")
             input("Press Enter to continue...")
