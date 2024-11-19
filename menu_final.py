@@ -581,7 +581,8 @@ def calculate_crop(details):
     # [Previous crop calculation code remains unchanged]
 
 def initialize_config():
-    config_dir = Path(os.getenv('LOCALAPPDATA')) / '411Config'
+    # Update config directory path
+    config_dir = Path(os.getenv('LOCALAPPDATA')) / '411'
     config_file = config_dir / 'settings.json'
     
     if not config_file.exists():
@@ -590,10 +591,14 @@ def initialize_config():
         # Create 411media folder
         videos_dir = Path(os.path.expandvars('%HOMEPATH%')) / 'Videos' / '411media'
         videos_dir.mkdir(parents=True, exist_ok=True)
+
+        videos_dir1 = Path(os.path.expandvars('%HOMEPATH%')) / 'Videos' / '411encoded'
+        videos_dir1.mkdir(parents=True, exist_ok=True)
         
         print("\n=== First Time Setup ===")
         print("\nDefault paths have been created:")
         print(f"MP4 Output: {videos_dir}")
+        print(f"Encoded Output: {videos_dir1}")
         
         # Get encoded videos output path
         print("\nWhere would you like encoded videos to be saved?")
