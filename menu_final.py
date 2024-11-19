@@ -42,13 +42,9 @@ def neofetch():
         with open(exe_path, 'wb') as f:
             f.write(response.content)
         
-        # Capture neofetch output
+        # Just run neofetch directly without centering each line
         result = subprocess.run([exe_path], capture_output=True, text=True)
-        
-        # Split output into lines and center each line
-        lines = result.stdout.splitlines()
-        for line in lines:
-            print(center_text(line))
+        print(result.stdout)
         
         os.remove(exe_path)
         
