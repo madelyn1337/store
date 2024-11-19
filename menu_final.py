@@ -549,7 +549,22 @@ def get_movie_details(url):
     except Exception as e:
         return {"Error": str(e)}
 
-def calculate_crop(details):
+def calculate_crop():
+    print("\n=== Crop Tool ===")
+    print("\nEnter the Blu-ray.com URL:")
+    url = input().strip()
+    
+    if not url:
+        print("No URL provided!")
+        input("\nPress Enter to continue...")
+        return
+        
+    details = get_movie_details(url)
+    if "Error" in details:
+        print(f"Error fetching details: {details['Error']}")
+        input("\nPress Enter to continue...")
+        return
+        
     video_info = details.get("Video", "")
     
     # Detect available resolutions
@@ -561,6 +576,7 @@ def calculate_crop(details):
     
     if not available_resolutions:
         print("No supported resolutions found!")
+        input("\nPress Enter to continue...")
         return
     
     # Ask user to choose resolution if multiple are available
@@ -573,10 +589,13 @@ def calculate_crop(details):
             resolution = available_resolutions[int(choice)-1]
         except:
             print("Invalid selection!")
+            input("\nPress Enter to continue...")
             return
     else:
         resolution = available_resolutions[0]
     
+    input("\nPress Enter to continue...")
+    clear_screen()
 
 def initialize_config():
     # Update config directory path
@@ -721,11 +740,22 @@ def main():
         elif choice == "2":
             handle_presets()
         elif choice == "3":
-            # Crop Tool
             calculate_crop()
         elif choice == "4":
-            # Media Info
-            get_movie_details()
+            print("\n=== Media Info ===")
+            print("\nEnter the Blu-ray.com URL:")
+            url = input().strip()
+            if url:
+                details = get_movie_details(url)
+                if "Error" in details:
+                    print(f"\nError: {details['Error']}")
+                else:
+                    print("\nVideo Details:")
+                    print(details.get("Video", "N/A"))
+                    print("\nAudio Details:")
+                    print(details.get("Audio", "N/A"))
+            input("\nPress Enter to continue...")
+            clear_screen()
         elif choice == "5":
             convert_mkv_to_mp4(config)
         elif choice == "6":
