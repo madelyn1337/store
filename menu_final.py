@@ -51,7 +51,8 @@ def neofetch():
         return
 
 def show_menu():
-    os.system('mode con: cols=120 lines=40')  # Make window bigger
+    os.system('mode con: cols=120 lines=50')  # Make window bigger to fit both neofetch and menu
+    neofetch()  # Call neofetch first
     print("\n=== Main Menu ===")
     print("1. Installation Options")
     print("2. Set Preset")
