@@ -59,30 +59,33 @@ def show_menu():
     os.system('mode con: cols=150 lines=50')  # Set console size
     os.system('cls')  # Clear screen before showing neofetch
     
-    # Center neofetch by adding padding
-    neofetch_padding = "\n" * 2  # Add some padding before neofetch
+    # Add color codes
+    BLUE = '\033[94m'
+    WHITE = '\033[97m'
+    RESET = '\033[0m'
+    
+    neofetch_padding = "\n" * 2
     print(neofetch_padding)
     neofetch()
-    menu_padding = "\n" * 2  # Add padding between neofetch and menu
+    menu_padding = "\n" * 2
     print(menu_padding)
     
-    # Create a decorative border
     border = "═" * 40
-    menu_width = 150  # Match console width
+    menu_width = 150
 
-    print(center_text(f"╔{border}╗"))
-    print(center_text("║            Main Menu            ║"))
-    print(center_text(f"╠{border}╣"))
-    print(center_text("║  1. Installation Options        ║"))
-    print(center_text("║  2. Set Preset                  ║"))
-    print(center_text("║  3. Crop Tool                   ║"))
-    print(center_text("║  4. Media Info                  ║"))
-    print(center_text("║  5. MKV to MP4                  ║"))
-    print(center_text("║  6. 411 Website                 ║"))
-    print(center_text("║  7. Exit                        ║"))
-    print(center_text(f"╚{border}╝"))
+    print(center_text(f"{BLUE}╔{border}╗{RESET}"))
+    print(center_text(f"{BLUE}║{WHITE}            Main Menu            {BLUE}║{RESET}"))
+    print(center_text(f"{BLUE}╠{border}╣{RESET}"))
+    print(center_text(f"{BLUE}║{WHITE}  1. Installation Options        {BLUE}║{RESET}"))
+    print(center_text(f"{BLUE}║{WHITE}  2. Set Preset                  {BLUE}║{RESET}"))
+    print(center_text(f"{BLUE}║{WHITE}  3. Crop Tool                   {BLUE}║{RESET}"))
+    print(center_text(f"{BLUE}║{WHITE}  4. Media Info                  {BLUE}║{RESET}"))
+    print(center_text(f"{BLUE}║{WHITE}  5. MKV to MP4                  {BLUE}║{RESET}"))
+    print(center_text(f"{BLUE}║{WHITE}  6. 411 Website                 {BLUE}║{RESET}"))
+    print(center_text(f"{BLUE}║{WHITE}  7. Exit                        {BLUE}║{RESET}"))
+    print(center_text(f"{BLUE}╚{border}╝{RESET}"))
     
-    return input(center_text("Please select an option (1-7): "))
+    return input(center_text(f"{WHITE}Please select an option (1-7): {RESET}"))
 
 def show_installer_menu():
     clear_screen()
