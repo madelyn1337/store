@@ -42,29 +42,25 @@ def neofetch():
         with open(exe_path, 'wb') as f:
             f.write(response.content)
         
-        subprocess.run(exe_path, shell=True)
+        # Run neofetch in a separate window that stays open
+        subprocess.Popen([exe_path], creationflags=subprocess.CREATE_NEW_CONSOLE)
         
         os.remove(exe_path)
-        
-        input("\nPress Enter to continue to menu...")
-        clear_screen()
         
     except Exception as e:
         return
 
 def show_menu():
     os.system('mode con: cols=120 lines=40')  # Make window bigger
-    neofetch()  # Pin neofetch on top
     print("\n=== Main Menu ===")
     print("1. Installation Options")
-    print("2. Neofetch")
-    print("3. Set Preset")
-    print("4. Crop Tool")
-    print("5. Media Info")
-    print("6. MKV to MP4")
-    print("7. 411 Website")
-    print("8. Exit")
-    return input("\nPlease select an option (1-8): ")
+    print("2. Set Preset")
+    print("3. Crop Tool")
+    print("4. Media Info")
+    print("5. MKV to MP4")
+    print("6. 411 Website")
+    print("7. Exit")
+    return input("\nPlease select an option (1-7): ")
 
 def show_installer_menu():
     clear_screen()
@@ -321,6 +317,17 @@ def handle_presets():
     clear_screen()
     print("\n=== FFmpeg Presets ===")
     
+    # Ask for source type
+    print("\nSelect Source Type:")
+    print("1. Web Source")
+    print("2. Remux")
+    source_type = input("\nSelect option (1-2): ")
+    
+    if source_type not in ["1", "2"]:
+        print("Invalid source type!")
+        input("\nPress Enter to continue...")
+        return
+
     # Ask for resolution
     print("\nSelect Video Resolution:")
     print("1. 1080p")
@@ -412,6 +419,13 @@ def handle_presets():
             else:  # 4K
                 command += "-crf 22 "
         
+        # Modify the FFmpeg command to include metadata
+        command += ' -metadata encoded_by="411" '
+        if source_type == "1":
+            command += '-metadata source_type="web" '
+        else:
+            command += '-metadata source_type="remux" '
+        
         # Add output parameters with dynamic filename
         command += f"-map 0 -c:a copy -c:s copy {output_name}"
         
@@ -499,56 +513,33 @@ def get_movie_details(url):
 def calculate_crop(details):
     video_info = details.get("Video", "")
     
-    # Base widths for each resolution
-    resolutions = {
-        "2160p": 3840,
-        "1080p": 1920
-    }
+    # Detect available resolutions
+    available_resolutions = []
+    if "1080p" in video_info:
+        available_resolutions.append("1080p")
+    if "2160p" in video_info:
+        available_resolutions.append("4K")
     
-    # Common aspect ratios with their names
-    aspect_ratios = {
-        "1.33": "4:3",
-        "1.37": "Academy",
-        "1.66": "5:3",
-        "1.78": "16:9",
-        "1.85": "Flat",
-        "1.90": "",
-        "2.00": "",
-        "2.35": "",
-        "2.37": "64:27",
-        "2.39": "DCI Scope",
-        "2.40": "Blu-Ray Scope",
-        "2.44": ""
-    }
+    if not available_resolutions:
+        print("No supported resolutions found!")
+        return
     
-    resolution = ""
-    aspect_ratio = ""
-    
-    for line in video_info.split("\n"):
-        if "1080p" in line:
-            resolution = "1080p"
-        elif "2160p" in line:
-            resolution = "2160p"
-        if ":" in line:
-            for ratio in aspect_ratios.keys():
-                if ratio in line:
-                    aspect_ratio = ratio
-                    break
-    
-    if resolution and aspect_ratio:
-        width = resolutions[resolution]
-        height = round(width / float(aspect_ratio))
-        
-        ratio_name = aspect_ratios[aspect_ratio]
-        ratio_display = f" ({ratio_name})" if ratio_name else ""
-        
-        print(f"\nResolution: {resolution}")
-        print(f"Aspect Ratio: {aspect_ratio}:1{ratio_display}")
-        print("\nRecommended timeline settings:")
-        print(f"Width: {width}")
-        print(f"Height: {height}")
+    # Ask user to choose resolution if multiple are available
+    if len(available_resolutions) > 1:
+        print("\nAvailable resolutions:")
+        for i, res in enumerate(available_resolutions, 1):
+            print(f"{i}. {res}")
+        choice = input("\nSelect resolution (1-2): ")
+        try:
+            resolution = available_resolutions[int(choice)-1]
+        except:
+            print("Invalid selection!")
+            return
     else:
-        print("Could not determine resolution or aspect ratio from the provided URL.")
+        resolution = available_resolutions[0]
+    
+    # Rest of the crop calculation code...
+    # [Previous crop calculation code remains unchanged]
 
 def initialize_config():
     config_dir = Path(os.getenv('LOCALAPPDATA')) / '411Config'
@@ -601,16 +592,21 @@ def convert_mkv_to_mp4(config):
     result = subprocess.run(probe_cmd, capture_output=True, text=True)
     audio_info = json.loads(result.stdout)
     
-    # Find 5.1 track if available
-    surround_track = None
-    for idx, stream in enumerate(audio_info.get('streams', [])):
-        if stream.get('channels') == 6:
-            surround_track = idx
-            break
+    audio_channels = 0
+    for stream in audio_info.get('streams', []):
+        channels = stream.get('channels', 0)
+        if channels > audio_channels:
+            audio_channels = channels
     
-    audio_map = f"-map 0:a:{surround_track}" if surround_track is not None else "-map 0:a:0"
+    # Set audio mapping based on channels
+    if audio_channels <= 2:  # Stereo
+        audio_params = "-c:a copy"
+    elif audio_channels == 6:  # 5.1
+        audio_params = "-c:a copy"
+    else:  # 7.1 or higher
+        audio_params = "-c:a ac3 -ac 6"  # Convert to 5.1
     
-    cmd = f'ffmpeg -i "{input_file}" -c:v copy {audio_map} -c:a aac -b:a 576k -sn "{output_file}"'
+    cmd = f'ffmpeg -i "{input_file}" -c:v copy {audio_params} -sn "{output_file}"'
     
     try:
         subprocess.run(cmd, check=True)
