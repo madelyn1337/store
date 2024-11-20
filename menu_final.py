@@ -716,7 +716,7 @@ def generate_usage_bars():
             console.print(f"Drive {partition.device} - [bold red]Access Denied[/bold red]")
 
 def main():
-    run_as_admin()
+    #run_as_admin()
     while True:
         generate_usage_bars()
         print("\n")
