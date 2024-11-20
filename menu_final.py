@@ -363,15 +363,15 @@ def full_ffmpeg_access():
     except PermissionError:
         print("Error: Run the script with administrator privileges to modify registry keys.")
 
-def get_video_path():
+def get_file_path(prompt_message="Drag and drop the file here and press Enter:"):
     if platform.system() == "Windows":
         # Create a temporary file to store the file path
         temp_file = tempfile.NamedTemporaryFile(delete=False)
         temp_file.close()
 
-        # Open a new non-admin command prompt
+        # Use 'runas' to open a non-admin command prompt
         subprocess.Popen(
-            f'start cmd /k "echo Drag and drop the video file here and press Enter: & set /p filepath= & echo %filepath% > {temp_file.name} & exit"',
+            f'runas /user:{os.getenv("USERNAME")} "cmd /k echo {prompt_message} & set /p filepath= & echo %filepath% > {temp_file.name} & exit"',
             shell=True
         )
 
@@ -379,16 +379,16 @@ def get_video_path():
 
         # Read the file path from the temporary file
         with open(temp_file.name, 'r') as f:
-            video_path = f.read().strip()
+            file_path = f.read().strip()
 
         # Clean up the temporary file
         os.remove(temp_file.name)
 
-        if not os.path.isfile(video_path):
-            print(f"Invalid file path: {video_path}")
+        if not os.path.isfile(file_path):
+            print(f"Invalid file path: {file_path}")
             return None
 
-        return video_path
+        return file_path
     else:
         # Handle other platforms if needed
         pass
@@ -396,7 +396,7 @@ def get_video_path():
 def mkv_to_mp4():
     clear_screen()
     folder_411, media_dir, encoded_dir = get_video_folders()
-    video_path = get_video_path()
+    video_path = get_file_path("Drag and drop the video file here and press Enter:")
     if not video_path:
         main()
         return
@@ -605,12 +605,9 @@ def media_info():
             print("Failed to install MediaInfo. Please try installing manually.")
             input("\nPress Enter to continue...")
             return
-    print("\nDrag and drop a media file here (or paste the path) and press Enter:")
-    file_path = input().strip()
-    file_path = file_path.strip('"').strip("'")
-    if not os.path.exists(file_path):
-        print("\nError: File not found")
-        input("\nPress Enter to continue...")
+    clear_screen()
+    file_path = get_file_path("Drag and drop a media file here and press Enter:")
+    if not file_path:
         return
     try:
         result = subprocess.run(['mediainfo', file_path], capture_output=True, text=True)
