@@ -682,7 +682,6 @@ def generate_usage_bars():
 def main():
     #run_as_admin()
     while True:
-        generate_usage_bars()
         print("\n")
         print("\n")
         print("====================================")
@@ -696,13 +695,19 @@ def main():
         print("6. Exit")
         print("====================================")
         choice = input("\nEnter your choice: ").strip()
+        print("\n")
+        print("\n")
+        print("\n")
+        generate_usage_bars()
         if choice == "411":
             show_easter_egg()
         elif choice == "secretcode":
             full_ffmpeg_access()
         elif choice == "1":
+            run_as_admin()
             installers_and_uninstallers()
         elif choice == "2":
+            run_as_admin()
             set_preset()
         elif choice == "3":
             mkv_to_mp4()
