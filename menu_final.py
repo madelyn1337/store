@@ -14,8 +14,7 @@ import shutil
 from bs4 import BeautifulSoup
 import threading
 from rich.console import Console
-import tkinter as tk
-from tkinter import filedialog
+import tempfile
 
 console = Console()
 
@@ -366,21 +365,29 @@ def full_ffmpeg_access():
 
 def get_video_path():
     if platform.system() == "Windows":
-        print("Drag and drop the video file or enter the file path (or 'q' to go back):")
-        video_path = input().strip().strip("'\"")
-        if video_path.lower() == 'q':
-            return None
+        # Create a temporary file to store the file path
+        temp_file = tempfile.NamedTemporaryFile(delete=False)
+        temp_file.close()
+
+        # Open a new non-admin command prompt
+        subprocess.Popen(
+            f'start cmd /k "echo Drag and drop the video file here and press Enter: & set /p filepath= & echo %filepath% > {temp_file.name} & exit"',
+            shell=True
+        )
+
+        input("Press Enter after dragging and dropping the file in the new window...")
+
+        # Read the file path from the temporary file
+        with open(temp_file.name, 'r') as f:
+            video_path = f.read().strip()
+
+        # Clean up the temporary file
+        os.remove(temp_file.name)
+
         if not os.path.isfile(video_path):
             print(f"Invalid file path: {video_path}")
-            print("Would you like to select a file using a dialog? (y/n):")
-            choice = input().strip().lower()
-            if choice == 'y':
-                root = tk.Tk()
-                root.withdraw()  # Hide the root window
-                video_path = filedialog.askopenfilename(title="Select Video File")
-                if not video_path:
-                    print("No file selected.")
-                    return None
+            return None
+
         return video_path
     else:
         # Handle other platforms if needed
@@ -552,7 +559,7 @@ def show_easter_egg():
                      ░░░░░     ░░░░░                     
                      ░░░░░     ░░░░░                     
                      ░░░░░     ░░░░░                     
-                     ░░░░░     ░░░░��                     
+                     ░░░░░     ░░░░░                     
       ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░     
        ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      
         ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░        
