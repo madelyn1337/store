@@ -14,6 +14,8 @@ import shutil
 from bs4 import BeautifulSoup
 import threading
 from rich.console import Console
+import tkinter as tk
+from tkinter import filedialog
 
 console = Console()
 
@@ -362,11 +364,33 @@ def full_ffmpeg_access():
     except PermissionError:
         print("Error: Run the script with administrator privileges to modify registry keys.")
 
+def get_video_path():
+    if platform.system() == "Windows":
+        print("Drag and drop the video file or enter the file path (or 'q' to go back):")
+        video_path = input().strip().strip("'\"")
+        if video_path.lower() == 'q':
+            return None
+        if not os.path.isfile(video_path):
+            print(f"Invalid file path: {video_path}")
+            print("Would you like to select a file using a dialog? (y/n):")
+            choice = input().strip().lower()
+            if choice == 'y':
+                root = tk.Tk()
+                root.withdraw()  # Hide the root window
+                video_path = filedialog.askopenfilename(title="Select Video File")
+                if not video_path:
+                    print("No file selected.")
+                    return None
+        return video_path
+    else:
+        # Handle other platforms if needed
+        pass
+
 def mkv_to_mp4():
     clear_screen()
     folder_411, media_dir, encoded_dir = get_video_folders()
-    video_path = input("Drag and drop the video file or enter the file path (or 'q' to go back): ").strip().strip("'\"")
-    if video_path.lower() == 'q':
+    video_path = get_video_path()
+    if not video_path:
         main()
         return
     readline.add_history(video_path)
@@ -528,7 +552,7 @@ def show_easter_egg():
                      ░░░░░     ░░░░░                     
                      ░░░░░     ░░░░░                     
                      ░░░░░     ░░░░░                     
-                     ░░░░░     ░░░░░                     
+                     ░░░░░     ░░░░��                     
       ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░     
        ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      
         ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░        
