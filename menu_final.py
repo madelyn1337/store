@@ -1,168 +1,178 @@
 import os
+import subprocess
+import psutil
+import platform
 import sys
-import zipfile
+import time
+import readline
+import atexit
 import requests
-import winreg
-import ctypes
+import zipfile
 from pathlib import Path
 import urllib.request
-import subprocess
-import cv2
-import requests
+import shutil
 from bs4 import BeautifulSoup
-import os
-import json
+import threading
+from rich.console import Console
+
+console = Console()
 
 def is_admin():
-    try:
-        return ctypes.windll.shell32.IsUserAnAdmin() 
-    except:
-        return False
+    if platform.system() == "Windows":
+        import ctypes
+        try:
+            return ctypes.windll.shell32.IsUserAnAdmin()
+        except:
+            return False
+    else:
+        return os.geteuid() == 0
 
 def run_as_admin():
-    try:
-        if not is_admin():
+    if not is_admin():
+        if platform.system() == "Windows":
+            import ctypes
             script = os.path.abspath(sys.argv[0])
             params = ' '.join(sys.argv[1:])
             ret = ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, f'"{script}" {params}', None, 1)
-            if ret > 32:  # Success
-                sys.exit(0)
-            else:
+            if ret <= 32:
                 raise Exception("Failed to elevate privileges")
-    except Exception as e:
-        print(f"Error elevating privileges: {e}")
-        sys.exit(1)
+            sys.exit(0)
+        else:
+            os.execvp('sudo', ['sudo', 'python3'] + sys.argv)
+            sys.exit()
 
-def neofetch():
+def is_ffmpeg_installed():
+    required_files = ['ffmpeg.exe', 'ffprobe.exe', 'ffplay.exe']
+    paths = os.environ["PATH"].split(os.pathsep)
+    for path in paths:
+        if all(os.path.exists(os.path.join(path, file)) for file in required_files):
+            return True
+    program_files_path = Path("C:/Program Files/ffmpeg")
+    if all((program_files_path / file).exists() for file in required_files):
+        return True
+    system32_path = Path("C:/Windows/System32")
+    if all((system32_path / file).exists() for file in required_files):
+        return True
+    c_path = Path("C:/ffmpeg")
+    if all((c_path / file).exists() for file in required_files):
+        return True
+    return False
+
+def install_media_info():
     try:
-        exe_url = "https://github.com/madelyn1337/store/raw/refs/heads/main/neofetch-win.exe"
-        exe_path = os.path.join(os.getenv('TEMP'), "system_info.exe")
-        
-        response = requests.get(exe_url)
-        with open(exe_path, 'wb') as f:
-            f.write(response.content)
-        
-        # Just run neofetch directly without centering each line
-        result = subprocess.run([exe_path], capture_output=True, text=True)
-        print(result.stdout)
-        
-        os.remove(exe_path)
-        
+        if platform.system() == "Windows":
+            url = "https://mediaarea.net/download/binary/mediainfo/24.01/MediaInfo_CLI_24.01_Windows_x64.zip"
+            temp_path = os.path.join(os.getenv('TEMP'), "mediainfo.zip")
+            print("Downloading MediaInfo...")
+            response = requests.get(url)
+            with open(temp_path, 'wb') as f:
+                f.write(response.content)
+            with zipfile.ZipFile(temp_path, 'r') as zip_ref:
+                zip_ref.extractall(os.path.join(os.getenv('TEMP'), "mediainfo"))
+            mediainfo_exe = os.path.join(os.getenv('TEMP'), "mediainfo", "mediainfo.exe")
+            ffmpeg_dir = Path("C:/Program Files/ffmpeg")
+            if ffmpeg_dir.exists():
+                shutil.move(mediainfo_exe, ffmpeg_dir / "mediainfo.exe")
+            shutil.rmtree(os.path.join(os.getenv('TEMP'), "mediainfo"))
+            os.remove(temp_path)
+        else:
+            url = "https://github.com/madelyn1337/store/raw/refs/heads/main/mediainfo.pkg"
+            temp_path = os.path.join(os.getenv('TEMP'), "mediainfo.pkg")
+            response = requests.get(url)
+            with open(temp_path, 'wb') as f:
+                f.write(response.content)
+            subprocess.run(["sudo", "installer", "-pkg", os.path.join(os.getenv('TEMP'), "mediainfo.pkg"), "-target", "/Applications"], check=True)
     except Exception as e:
-        return
+        print(f"Error installing MediaInfo: {e}")
 
-def center_text(text, width=150):
-    """Center text within specified width"""
-    return text.center(width)
+def is_dmfs_installed():
+    program_files = Path("C:/Program Files/DebugMode/FrameServer")
+    if program_files.exists():
+        return True
+    return False
 
-def show_menu():
-    os.system('mode con: cols=150 lines=50')  # Set console size
-    os.system('cls')  # Clear screen before showing neofetch
-    
-    # Add color codes
-    BLUE = '\033[94m'
-    WHITE = '\033[97m'
-    RESET = '\033[0m'
-    
-    neofetch_padding = "\n" * 2
-    print(neofetch_padding)
-    neofetch()
-    menu_padding = "\n" * 2
-    print(menu_padding)
-    
-    border = "═" * 40
-    menu_width = 150
-
-    print(center_text(f"{BLUE}╔{border}╗{RESET}"))
-    print(center_text(f"{BLUE}║{WHITE}            Main Menu            {BLUE}║{RESET}"))
-    print(center_text(f"{BLUE}╠{border}╣{RESET}"))
-    print(center_text(f"{BLUE}║{WHITE}  1. Installation Options        {BLUE}║{RESET}"))
-    print(center_text(f"{BLUE}║{WHITE}  2. Set Preset                  {BLUE}║{RESET}"))
-    print(center_text(f"{BLUE}║{WHITE}  3. Crop Tool                   {BLUE}║{RESET}"))
-    print(center_text(f"{BLUE}║{WHITE}  4. Media Info                  {BLUE}║{RESET}"))
-    print(center_text(f"{BLUE}║{WHITE}  5. MKV to MP4                  {BLUE}║{RESET}"))
-    print(center_text(f"{BLUE}║{WHITE}  6. 411 Website                 {BLUE}║{RESET}"))
-    print(center_text(f"{BLUE}║{WHITE}  7. Exit                        {BLUE}║{RESET}"))
-    print(center_text(f"{BLUE}╚{border}╝{RESET}"))
-    
-    return input(center_text(f"{WHITE}Please select an option (1-7): {RESET}"))
-
-def show_installer_menu():
-    clear_screen()
-    border = "═" * 45
-    menu_width = 120
-
-    print("\n" + center_text(f"╔{border}╗"))
-    print(center_text("║            Installation Options            ║"))
-    print(center_text(f"╠{border}╣"))
-    print(center_text("║  1. Check Installed Components            ║"))
-    print(center_text("║  2. Install All Components                ║"))
-    print(center_text("║  3. Uninstall Components                  ║"))
-    print(center_text("║  4. Back to Main Menu                     ║"))
-    print(center_text(f"╚{border}╝"))
-    
-    return input(center_text("Please select an option (1-4): "))
-
-def show_uninstall_menu():
-    border = "═" * 40
-    menu_width = 120
-
-    print("\n" + center_text(f"╔{border}╗"))
-    print(center_text("║         Uninstall Components         ║"))
-    print(center_text(f"╠{border}╣"))
-    print(center_text("║  1. Uninstall FFmpeg                ║"))
-    print(center_text("║  2. Uninstall DMFS                  ║"))
-    print(center_text("║  3. Uninstall Both                  ║"))
-    print(center_text("║  4. Back to Main Menu               ║"))
-    print(center_text(f"╚{border}╝"))
-    
-    return input(center_text("Please select an option (1-4): "))
-
-def uninstall_ffmpeg():
-    print("\nUninstalling FFmpeg...")
-    try:
-        # Remove from Program Files
-        ffmpeg_dir = Path("C:/Program Files/ffmpeg")
-        if ffmpeg_dir.exists():
-            os.system('rmdir /S /Q "C:\\Program Files\\ffmpeg"')
-        
-        # Remove from System32
-        system32_path = Path("C:/Windows/System32/ffmpeg.exe")
-        if system32_path.exists():
-            os.remove(system32_path)
-        
-        # Remove from C:/ffmpeg
-        c_path = Path("C:/ffmpeg")
-        if c_path.exists():
-            os.system('rmdir /S /Q "C:\\ffmpeg"')
-        
-        # Remove from PATH
-        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SYSTEM\CurrentControlSet\Control\Session Manager\Environment', 0, winreg.KEY_ALL_ACCESS) as key:
-            path = winreg.QueryValueEx(key, 'Path')[0]
-            new_path = ";".join([p for p in path.split(";") if "ffmpeg" not in p.lower()])
-            winreg.SetValueEx(key, 'Path', 0, winreg.REG_EXPAND_SZ, new_path)
+def add_to_path(new_path):
+    import winreg
+    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SYSTEM\CurrentControlSet\Control\Session Manager\Environment', 0, winreg.KEY_ALL_ACCESS) as key:
+        path = winreg.QueryValueEx(key, 'Path')[0]
+        if new_path not in path:
+            new_path_value = f"{path};{new_path}"
+            winreg.SetValueEx(key, 'Path', 0, winreg.REG_EXPAND_SZ, new_path_value)
             os.system('setx PATH "%PATH%"')
-        
-        print("FFmpeg has been uninstalled successfully!")
-    except Exception as e:
-        print(f"Error uninstalling FFmpeg: {e}")
+            print(f"Added {new_path} to PATH")
 
-def uninstall_dmfs():
-    print("\nUninstalling DMFS...")
+def download_ffmpeg(safe_install=True):
+    url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+    zip_path = "ffmpeg.zip"
+    print("Downloading FFmpeg...")
+    response = requests.get(url, stream=True)
+    total_size = int(response.headers.get('content-length', 0))
+    with open(zip_path, 'wb') as f:
+        for chunk in response.iter_content(chunk_size=8192):
+            if chunk:
+                f.write(chunk)
+    print("Download complete. Extracting...")
+    required_files = ['ffmpeg.exe', 'ffprobe.exe', 'ffplay.exe']
+    if safe_install:
+        install_dir = Path("C:/Program Files/ffmpeg")
+        install_dir.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall("ffmpeg_temp")
+        bin_path = Path("ffmpeg_temp/ffmpeg-master-latest-win64-gpl/bin")
+        for file in bin_path.glob('*'):
+            if file.name in required_files: 
+                dest = install_dir / file.name
+                if dest.exists():
+                    dest.unlink()
+                file.rename(dest)
+        add_to_path(str(install_dir))
+    else:
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall("ffmpeg_temp")
+        for file in required_files:
+            source = f"ffmpeg_temp\\ffmpeg-master-latest-win64-gpl\\bin\\{file}"
+            if os.path.exists(source):
+                os.system(f'move "{source}" C:\\Windows\\System32')
+    os.system('rmdir /S /Q ffmpeg_temp')
+    os.remove(zip_path)
+
+def install_dokan():
+    print("\nInstalling Dokan...")
     try:
-        # Remove DMFS directory
-        dmfs_dir = Path("C:/Program Files/DebugMode/FrameServer")
-        if dmfs_dir.exists():
-            os.system('rmdir /S /Q "C:\\Program Files\\DebugMode\\FrameServer"')
-        
-        # Remove Adobe plugin
-        adobe_plugin = Path("C:/Program Files/Adobe/Common/Plug-ins/7.0/MediaCore/dfscPremiereOut.prm")
-        if adobe_plugin.exists():
-            os.remove(adobe_plugin)
-        
-        print("DMFS has been uninstalled successfully!")
+        dokan_url = "https://github.com/dokan-dev/dokany/releases/download/v1.5.0.3000/Dokan_x64.msi"
+        msi_path = "dokan_temp.msi"
+        urllib.request.urlretrieve(dokan_url, msi_path)
+        install_command = f'msiexec /i "{msi_path}" /qn'
+        os.system(install_command)
+        os.remove(msi_path)
     except Exception as e:
-        print(f"Error uninstalling DMFS: {e}")
+        print(f"{e}")
+
+def install_dmfs():
+    print("\nInstalling DMFS...")
+    dmfs_dir = Path("C:/Program Files/DebugMode/FrameServer")
+    adobe_dir = Path("C:/Program Files/Adobe/Common/Plug-ins/7.0/MediaCore")
+    if not dmfs_dir.exists():
+        dmfs_dir.mkdir(parents=True)
+    if not adobe_dir.exists():
+        adobe_dir.mkdir(parents=True) 
+    extension_url = "https://github.com/madelyn1337/store/raw/refs/heads/main/dfscPremiereOut.prm"
+    zip_url = "https://github.com/madelyn1337/store/raw/refs/heads/main/FrameServer.zip"
+    try:
+        extension_path = adobe_dir / "dfscPremiereOut.prm"
+        urllib.request.urlretrieve(extension_url, extension_path)
+        zip_path = "FrameServer.zip"
+        urllib.request.urlretrieve(zip_url, zip_path)
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(dmfs_dir)
+        os.remove(zip_path)
+    except Exception as e:
+        print(f"Error installing DMFS: {e}")
+
+def open_website():
+    website_link = "https://scenepacks.com" 
+    os.system(f'start {website_link}')
+    input("\nPress Enter to continue...")
 
 def check_installations():
     clear_screen()
@@ -172,601 +182,549 @@ def check_installations():
     input("\nPress Enter to continue...")
     clear_screen()
 
-def open_website():
-    website_link = "https://www.blu-ray.com/" 
-    os.system(f'start {website_link}')
-    input("\nPress Enter to continue...")
-
-def is_ffmpeg_installed():
-    required_files = ['ffmpeg.exe', 'ffprobe.exe', 'ffplay.exe']
-    
-    # Check PATH locations
-    paths = os.environ["PATH"].split(os.pathsep)
-    for path in paths:
-        if all(os.path.exists(os.path.join(path, file)) for file in required_files):
-            return True
-    
-    # Check Program Files
-    program_files_path = Path("C:/Program Files/ffmpeg")
-    if all((program_files_path / file).exists() for file in required_files):
-        return True
-    
-    # Check System32
-    system32_path = Path("C:/Windows/System32")
-    if all((system32_path / file).exists() for file in required_files):
-        return True
-    
-    # Check C:/ffmpeg
-    c_path = Path("C:/ffmpeg")
-    if all((c_path / file).exists() for file in required_files):
-        return True
-
-    return False
-
-def is_dmfs_installed():
-    program_files = Path("C:/Program Files/DebugMode/FrameServer")
-    if program_files.exists():
-        return True
-    return False
-
-def install_dokan():
-    print("\nInstalling Dokan...")
-    
+def uninstall_ffmpeg():
+    import winreg
+    print("\nUninstalling FFmpeg...")
     try:
-        # Download Dokan MSI
-        dokan_url = "https://github.com/dokan-dev/dokany/releases/download/v1.5.0.3000/Dokan_x64.msi"
-        msi_path = "dokan_temp.msi"
-        urllib.request.urlretrieve(dokan_url, msi_path)
-        
-        install_command = f'msiexec /i "{msi_path}" /qn'
-        os.system(install_command)
-        
-        # Clean up
-        os.remove(msi_path)
-        print("Dokan installation complete!")
-        
-    except Exception as e:
-        print(f"Error installing Dokan: {e}")
-
-
-def install_dmfs():
-    print("\nInstalling DMFS...")
-    
-    # Create directories if they don't exist
-    dmfs_dir = Path("C:/Program Files/DebugMode/FrameServer")
-    adobe_dir = Path("C:/Program Files/Adobe/Common/Plug-ins/7.0/MediaCore")
-    
-    if not dmfs_dir.exists():
-        dmfs_dir.mkdir(parents=True)
-    else:
-        print(f"Directory already exists: {dmfs_dir}")
-        
-    if not adobe_dir.exists():
-        adobe_dir.mkdir(parents=True) 
-    else:
-        print(f"Directory already exists: {adobe_dir}")
-
-    extension_url = "https://github.com/madelyn1337/store/raw/refs/heads/main/dfscPremiereOut.prm"
-    zip_url = "https://github.com/madelyn1337/store/raw/refs/heads/main/FrameServer.zip"
-    
-    try:
-        extension_path = adobe_dir / "dfscPremiereOut.prm"
-        urllib.request.urlretrieve(extension_url, extension_path)
-        
-        zip_path = "FrameServer.zip"
-        urllib.request.urlretrieve(zip_url, zip_path)
-        
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(dmfs_dir)
-        
-        os.remove(zip_path)
-        print("DMFS installation complete!")
-        
-    except Exception as e:
-        print(f"Error installing DMFS: {e}")
-    
-    try:
-        # Set required registry keys
-        reg_path = r"SOFTWARE\DebugMode\FrameServer"
-        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, reg_path) as key:
-            winreg.SetValueEx(key, "runCommandOnFsStart", 0, winreg.REG_DWORD, 1)
-            winreg.SetValueEx(key, "endAfterRunningCommand", 0, winreg.REG_DWORD, 1)
-            winreg.SetValueEx(key, "pcmAudioInAvi", 0, winreg.REG_DWORD, 1) 
-
-            
-    except Exception as e:
-        print(f"Error setting registry keys: {e}")
-        
-    print("DMFS installation complete!")
-
-def download_ffmpeg(safe_install=True):
-    url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
-    zip_path = "ffmpeg.zip"
-
-    print("Downloading FFmpeg...")
-    response = requests.get(url, stream=True)
-    total_size = int(response.headers.get('content-length', 0))
-    
-    with open(zip_path, 'wb') as f:
-        for chunk in response.iter_content(chunk_size=8192):
-            if chunk:
-                f.write(chunk)
-    
-    print("Download complete. Extracting...")
-    
-    required_files = ['ffmpeg.exe', 'ffprobe.exe', 'ffplay.exe']
-    
-    if safe_install:
-        install_dir = Path("C:/Program Files/ffmpeg")
-        install_dir.mkdir(parents=True, exist_ok=True)
-        
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall("ffmpeg_temp")
-        
-        bin_path = Path("ffmpeg_temp/ffmpeg-master-latest-win64-gpl/bin")
-        for file in bin_path.glob('*'):
-            if file.name in required_files:  # Only move required executables
-                dest = install_dir / file.name
-                if dest.exists():
-                    dest.unlink()
-                file.rename(dest)
-        
-        add_to_path(str(install_dir))
-    else:
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall("ffmpeg_temp")
-        
-        # Move all required files to System32
-        for file in required_files:
-            source = f"ffmpeg_temp\\ffmpeg-master-latest-win64-gpl\\bin\\{file}"
-            if os.path.exists(source):
-                os.system(f'move "{source}" C:\\Windows\\System32')
-    
-    os.system('rmdir /S /Q ffmpeg_temp')
-    os.remove(zip_path)
-    
-    print("FFmpeg installation complete!")
-
-def add_to_path(new_path):
-    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SYSTEM\CurrentControlSet\Control\Session Manager\Environment', 0, winreg.KEY_ALL_ACCESS) as key:
-        path = winreg.QueryValueEx(key, 'Path')[0]
-        
-        if new_path not in path:
-            new_path_value = f"{path};{new_path}"
-            winreg.SetValueEx(key, 'Path', 0, winreg.REG_EXPAND_SZ, new_path_value)
-            
+        ffmpeg_dir = Path("C:/Program Files/ffmpeg")
+        if ffmpeg_dir.exists():
+            os.system('rmdir /S /Q "C:\\Program Files\\ffmpeg"')
+        system32_path = Path("C:/Windows/System32/ffmpeg.exe")
+        if system32_path.exists():
+            os.remove(system32_path)
+        c_path = Path("C:/ffmpeg")
+        if c_path.exists():
+            os.system('rmdir /S /Q "C:\\ffmpeg"')
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SYSTEM\CurrentControlSet\Control\Session Manager\Environment', 0, winreg.KEY_ALL_ACCESS) as key:
+            path = winreg.QueryValueEx(key, 'Path')[0]
+            new_path = ";".join([p for p in path.split(";") if "ffmpeg" not in p.lower()])
+            winreg.SetValueEx(key, 'Path', 0, winreg.REG_EXPAND_SZ, new_path)
             os.system('setx PATH "%PATH%"')
-            print(f"Added {new_path} to PATH")
-
-def clear_screen():
-    os.system('cls')
-
-def get_video_info(filepath):
-    try:
-        video = cv2.VideoCapture(filepath)
-        width = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        video.release()
-        return width, height
+        print("FFmpeg has been uninstalled successfully!")
     except Exception as e:
-        print(f"Error reading video file: {e}")
-        return None, None
+        print(f"Error uninstalling FFmpeg: {e}")
 
-def handle_presets():
+def uninstall_dmfs():
+    print("\nUninstalling DMFS...")
+    try:
+        dmfs_dir = Path("C:/Program Files/DebugMode/FrameServer")
+        if dmfs_dir.exists():
+            os.system('rmdir /S /Q "C:\\Program Files\\DebugMode\\FrameServer"')
+        adobe_plugin = Path("C:/Program Files/Adobe/Common/Plug-ins/7.0/MediaCore/dfscPremiereOut.prm")
+        if adobe_plugin.exists():
+            os.remove(adobe_plugin)
+    except Exception as e:
+        print(f"Error uninstalling DMFS: {e}")
+
+def install_all_3():
     clear_screen()
-    print("\n=== FFmpeg Presets ===")
-    
-    # Ask for source type
-    print("\nSelect Source Type:")
-    print("1. Web Source")
-    print("2. Remux")
-    source_type = input("\nSelect option (1-2): ")
-    
-    if source_type not in ["1", "2"]:
-        print("Invalid source type!")
-        input("\nPress Enter to continue...")
-        return
+    download_ffmpeg()
+    install_dmfs()
+    install_media_info()
 
-    # Ask for resolution
-    print("\nSelect Video Resolution:")
-    print("1. 1080p")
-    print("2. 4K")
-    print("3. I don't know (detect from file)")
-    res_choice = input("\nSelect option (1-3): ")
-    
-    resolution = None
-    if res_choice in ["1", "2"]:
-        resolution = "1080p" if res_choice == "1" else "4K"
-    elif res_choice == "3":
-        print("\nDrag and drop your video file here (or paste the full path):")
-        filepath = input().strip('"')  # Remove quotes if present from drag and drop
-        
-        if not os.path.exists(filepath):
-            print("File not found!")
-            input("\nPress Enter to continue...")
-            return
-            
-        width, height = get_video_info(filepath)
-        if not width or not height:
-            print("Could not determine video resolution!")
-            input("\nPress Enter to continue...")
-            return
-            
-        resolution = "4K" if height >= 2160 else "1080p" if height >= 1080 else "Other"
-        if resolution == "Other":
-            print("Video resolution not supported (must be 1080p or 4K)")
-            input("\nPress Enter to continue...")
-            return
-    else:
-        print("Invalid option selected!")
-        input("\nPress Enter to continue...")
-        return
-        
-    print(f"\nResolution: {resolution}")
-    
-    print("\nSelect Codec:")
-    print("1. H.265 (HEVC)")
-    codec_choice = input("Select codec (1): ")
-    
-    if codec_choice != "1":
-        print("Invalid codec selection!")
-        input("\nPress Enter to continue...")
-        return
-    
-    codec = "h265"
-    
-    print("\nGrain Levels:")
-    print("1. No Grain")
-    print("2. With Grain")
-    print("3. Heavy Grain")
-    print("4. Animation")
-    grain_level = input("Select grain level (1-4): ")
-    
-    try:
-        command = "ffmpeg -i \"C:/DMFS/virtual/*.avi\" "
-        
-        if grain_level == "1":  # No grain
-            command += "-tune film "
-        elif grain_level == "2":  # With grain
-            command += "-tune grain "
-            if codec == "h264":
-                command += "-deblock -2:-2 "
-            else:
-                command += "-x265-params deblock=-2:-2 "
-        elif grain_level == "3":  # Heavy grain
-            command += "-tune grain "
-            if codec == "h264":
-                command += "-deblock -3:-3 "
-            else:
-                command += "-x265-params deblock=-3:-3 "
-        elif grain_level == "4":  # Animation
-            command += "-tune animation "
-        
-        grain_text = "nograin" if grain_level == "1" else "grain" if grain_level == "2" else "heavygrain" if grain_level == "3" else "animation"
-        output_name = f"encoded_{resolution}_{codec}_{grain_text}.mkv"
-        
-        if codec == "h264":
-            command += "-c:v libx264 -preset medium "
-            if resolution == "1080p":
-                command += "-crf 16 "
-            else:  # 4K
-                command += "-crf 18 "
-        else:  # h265
-            command += "-c:v libx265 -preset medium "
-            if resolution == "1080p":
-                command += "-crf 20 "
-            else:  # 4K
-                command += "-crf 22 "
-        
-        # Modify the FFmpeg command to include metadata
-        command += ' -metadata encoded_by="411" '
-        if source_type == "1":
-            command += '-metadata source_type="web" '
-        else:
-            command += '-metadata source_type="remux" '
-        
-        # Add output parameters with dynamic filename
-        command += f"-map 0 -c:a copy -c:s copy {output_name}"
-        
-        # Update registry with constructed command
-        reg_path = r"SOFTWARE\DebugMode\FrameServer"
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, reg_path, 0, winreg.KEY_WRITE) as key:
-            winreg.SetValueEx(key, "commandToRunOnFsStart", 0, winreg.REG_SZ, command)
-        
-        print("\nPreset applied successfully!")
-        print(f"Command: {command}")
-        print(f"Output will be saved as: {output_name}")
-        
-    except Exception as e:
-        print(f"Error applying preset: {e}")
-    
-    input("\nPress Enter to continue...")
-    clear_screen()
-
-def select_correct_version(width, height, aspect_ratio):
-    try:
-        # Parse aspect ratio (e.g., "2.39:1" -> 2.39)
-        if ':' in aspect_ratio:
-            ratio = float(aspect_ratio.split(':')[0]) / float(aspect_ratio.split(':')[1])
-        else:
-            ratio = float(aspect_ratio)
-        
-        # Calculate potential dimensions
-        current_ratio = width / height
-        
-        if abs(current_ratio - ratio) < 0.1:  # If already close to target ratio
-            return width, height
-        
-        # Try to maintain height and adjust width
-        new_width = int(height * ratio)
-        if new_width <= width:
-            return new_width, height
-        
-        # If that doesn't work, maintain width and adjust height
-        new_height = int(width / ratio)
-        if new_height <= height:
-            return width, new_height
-        
-        return None, None
-        
-    except Exception as e:
-        print(f"Error calculating dimensions: {e}")
-        return None, None
+def uninstall_both():
+    uninstall_ffmpeg()
+    uninstall_dmfs()
 
 def get_movie_details(url):
     try:
-        # Fetch the page content
         response = requests.get(url)
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
-
         details = {}
-
-        # Extract Video section
         video_label = soup.find("span", class_="subheading", string="Video")
         if video_label:
-            # Extract details following the "Video" header
             video_details = []
             sibling = video_label.find_next_sibling()
-            while sibling and sibling.name == "br":  # Traverse <br> siblings
+            while sibling and sibling.name == "br":
                 if sibling.next_sibling and sibling.next_sibling.string:
                     video_details.append(sibling.next_sibling.string.strip())
                 sibling = sibling.find_next_sibling()
             details["Video"] = "\n".join(video_details) if video_details else "N/A"
         else:
             details["Video"] = "N/A"
-
-        # Extract Audio section
         audio_label = soup.find("span", class_="subheading", string="Audio")
         if audio_label:
             audio_section = audio_label.find_next("div", id="shortaudio")
             details["Audio"] = audio_section.get_text(strip=True, separator="\n") if audio_section else "N/A"
         else:
             details["Audio"] = "N/A"
-
         return details
-
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return {"Error": str(e)}
 
-def calculate_crop():
-    print("\n=== Crop Tool ===")
-    print("\nEnter the Blu-ray.com URL:")
-    url = input().strip()
-    
-    if not url:
-        print("No URL provided!")
-        input("\nPress Enter to continue...")
-        return
-        
-    details = get_movie_details(url)
-    if "Error" in details:
-        print(f"Error fetching details: {details['Error']}")
-        input("\nPress Enter to continue...")
-        return
-        
-    video_info = details.get("Video", "")
-    
-    # Detect available resolutions
-    available_resolutions = []
-    if "1080p" in video_info:
-        available_resolutions.append("1080p")
-    if "2160p" in video_info:
-        available_resolutions.append("4K")
-    
-    if not available_resolutions:
-        print("No supported resolutions found!")
-        input("\nPress Enter to continue...")
-        return
-    
-    # Ask user to choose resolution if multiple are available
-    if len(available_resolutions) > 1:
-        print("\nAvailable resolutions:")
-        for i, res in enumerate(available_resolutions, 1):
-            print(f"{i}. {res}")
-        choice = input("\nSelect resolution (1-2): ")
+def get_video_folders():
+    home_dir = os.path.expanduser("~")
+    if platform.system() == "Darwin":
+        videos_dir = os.path.join(home_dir, "Movies")
+    else:
+        videos_dir = os.path.join(home_dir, "Videos")
+    folder_411 = os.path.join(videos_dir, "411")
+    media_dir = os.path.join(folder_411, "Media")
+    encoded_dir = os.path.join(folder_411, "Encoded")
+    os.makedirs(media_dir, exist_ok=True)
+    os.makedirs(encoded_dir, exist_ok=True)
+    return folder_411, media_dir, encoded_dir
+
+def detect_black_bars(video_path):
+    try:
+        ffprobe_command = [
+            "ffmpeg", "-i", video_path, "-vf", "cropdetect=24:2:0",
+            "-frames:v", "300", "-f", "null", "-" 
+        ]
+        result = subprocess.run(ffprobe_command, stderr=subprocess.PIPE, text=True)
+        crop_lines = [line for line in result.stderr.split("\n") if "crop=" in line]
+        if not crop_lines:
+            return None
+        last_crop = crop_lines[-1]
+        crop_params = last_crop.split("crop=")[-1].split(" ")[0]
         try:
-            resolution = available_resolutions[int(choice)-1]
-        except:
-            print("Invalid selection!")
+            w, h, x, y = map(int, crop_params.split(":"))
+            if w <= 0 or h <= 0 or x < 0 or y < 0:
+                return None
+        except (ValueError, IndexError):
+            return None
+        return crop_params
+    except Exception as e:
+        return None
+
+def set_preset():
+    clear_screen()
+    cpu_cores = psutil.cpu_count(logical=True)
+    is_apple_silicon = (
+        platform.system() == "Darwin" and 
+        platform.processor() == "arm"
+    )
+    if is_apple_silicon:
+        threads = min(cpu_cores - 2, 12)
+        crf = 18
+        x265_params = "aq-mode=3:aq-strength=0.9:psy-rd=2.0:deblock=-1,-1"
+    _, _, output_dir = get_video_folders()
+    readline.add_history(output_dir)
+    if not os.path.isdir(output_dir):
+        print("Invalid directory. Exiting.")
+        return
+    is_grainy = input("Is the movie extremely grainy (e.g., Texas Chainsaw Massacre)? (y/n): ").strip().lower()
+    if cpu_cores > 20:
+        threads = 28
+        crf = 18
+        x265_params = "aq-mode=3:aq-strength=0.9:psy-rd=2.0:deblock=-1,-1"
+    elif 16 < cpu_cores <= 20:
+        threads = 18
+        crf = 18
+        x265_params = "psy-rd=2.0:deblock=-1,-1"
+    elif 10 < cpu_cores <= 16:
+        threads = 14
+        crf = 20
+        x265_params = "psy-rd=1.0:deblock=-1,-1"
+    elif 5 < cpu_cores <= 10:
+        threads = 6
+        crf = 20
+        x265_params = "deblock=-1,-1"
+    else:
+        threads = 4
+        crf = 20
+        x265_params = None
+    if is_grainy == 'y':
+        crf -= 2
+    x265_params_str = f'-x265-params "{x265_params}"' if x265_params else ""
+    ffmpeg_command = (
+        f'ffpb -i C:/DMFS/virtual/*.avi -c:v libx265 -preset medium -crf {crf} '
+        f'-tune grain {x265_params_str} '
+        f'-c:a aac -b:a 576K -ac 2 -ar 48000 -sn -threads {threads} '
+        f'-tag:v hvc1 -pix_fmt yuv420p -movflags +faststart '
+        f'-metadata scenepack by=411 '
+        f'"{output_dir}/encoded.mp4"'
+    )
+    if platform.system() == "Windows":
+        reg_path = r"SOFTWARE\DebugMode\FrameServer"
+        import winreg
+        try:
+            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, reg_path) as key:
+                winreg.SetValueEx(key, "runCommandOnFsStart", 0, winreg.REG_DWORD, 1)
+                winreg.SetValueEx(key, "endAfterRunningCommand", 0, winreg.REG_DWORD, 1)
+                winreg.SetValueEx(key, "pcmAudioInAvi", 0, winreg.REG_DWORD, 1)
+                winreg.SetValueEx(key, "commandToRunOnFsStart", 0, winreg.REG_SZ, ffmpeg_command)
+        except PermissionError:
+            print("Error: Run the script with administrator privileges to modify registry keys.")
+
+def full_ffmpeg_access():
+    print("Enter your custom FFmpeg command:")
+    custom_command = input().strip()
+    reg_path = r"SOFTWARE\DebugMode\FrameServer"
+    import winreg
+    try:
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, reg_path) as key:
+            winreg.SetValueEx(key, "commandToRunOnFsStart", 0, winreg.REG_SZ, custom_command)
+        print("Custom FFmpeg command has been set.")
+    except PermissionError:
+        print("Error: Run the script with administrator privileges to modify registry keys.")
+
+def mkv_to_mp4():
+    clear_screen()
+    folder_411, media_dir, encoded_dir = get_video_folders()
+    video_path = input("Drag and drop the video file or enter the file path (or 'q' to go back): ").strip().strip("'\"")
+    if video_path.lower() == 'q':
+        main()
+        return
+    readline.add_history(video_path)
+    if not os.path.isfile(video_path):
+        print(f"Invalid file path: {video_path}")
+        return
+    clear_screen()
+    print("Choose conversion method:")
+    print("\n1. Fast copy to MP4 (no cropping, maintains original quality)")
+    print("\n2. Re-encode to ProRes with automatic black bar detection/cropping")
+    print("\n3. Re-encode to H.264")
+    choice = input("\nEnter choice (1, 2, 3, or 'q' to go back): ").strip()
+    if choice.lower() == 'q':
+        main()
+        return
+    clear_screen()
+    input_filename = os.path.splitext(os.path.basename(video_path))[0]
+    threads = str(min(psutil.cpu_count(logical=True) - 2, 12))
+    try:
+        audio_streams = subprocess.check_output(
+            ["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=channels", "-of", "csv=p=0", video_path],
+            text=True
+        ).strip().split('\n')
+        audio_map = "0:a:0"
+        for i, channels in enumerate(audio_streams):
+            if channels.strip() == "6":
+                audio_map = f"0:a:{i}"
+                break
+            elif channels.strip() == "8":
+                audio_map = f"0:a:{i}"
+                downmix = True
+                break
+        if choice == "1":
+            output_path = os.path.join(media_dir, f"{input_filename}.mp4")
+            probe_cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0", 
+                        "-show_entries", "stream=codec_name", "-of", "default=noprint_wrappers=1:nokey=1", 
+                        video_path]
+            codec = subprocess.check_output(probe_cmd, text=True).strip()
+            tag = "hvc1" if codec == "hevc" else "avc1" if codec == "h264" else None
+            ffmpeg_command = [
+                "ffpb", "-i", video_path,
+                "-map", "0:v:0",
+                "-map", audio_map,
+                "-c:v", "copy",
+                "-tag:v", tag,
+                "-c:a", "copy",
+                "-sn",
+                "-threads", threads,
+                output_path
+            ]
+        if choice == "2":
+            while True:
+                print("Choose ProRes profile:")
+                print("\n1. Proxy (Recommended)")
+                print("\n2. LT")
+                print("\n3. 422")
+                print("\n4. 422 HQ")
+                print("\n5. 4444")
+                print("\n6. 4444 XQ")
+                print("\n7. Info about each codec")
+                profile_choice = input("\nEnter choice (1-7): ").strip()
+                if profile_choice == "7":
+                    clear_screen()
+                    print("ProRes Profiles Information:")
+                    print("\nProRes in general is a extremely fast codec to encode and edit with.")
+                    print("\nWhen increasing the profile, it generally increases the quality and file size although speed really isnt affected THAT much.")
+                    print("\nHowever going TOO high actually just doesnt make that big of a difference to the human eyes and just makes file size WAY too big.")
+                    print("\nFor 40 min shows just divide the file size by roughly 3 - 3.5")                
+                    print("\n1. Proxy: Low bitrate, lowest file size. 2 hour movie 1080p: ~45GB 4k: ~180GB")
+                    print("\n2. LT: Lower bitrate than 422, good for editing. 2 hour movie 1080p: ~60GB 4k: ~240GB")
+                    print("\n3. 422: Standard quality, widely used for editing. 2 hour movie 1080p: ~100GB 4k: ~400GB")
+                    print("\n4. 422 HQ: Higher quality than 422, used for high-end editing. 2 hour movie 1080p: ~120GB 4k: ~500GB")
+                    print("\n5. 4444: Supports alpha channel, used for compositing. 2 hour movie 1080p: ~180GB 4k: ~720GB")
+                    print("\n6. 4444 XQ: Highest quality, supports alpha channel. 2 hour movie 1080p: ~240GB 4k: ~960GB")
+                    input("\nPress any key to continue...")
+                    clear_screen()
+                else:
+                    break
+            output_path = os.path.join(media_dir, f"{input_filename}.mov")
+            crop_params = detect_black_bars(video_path)
+            ffmpeg_command = [
+                "ffpb", "-i", video_path,
+                "-map", "0:v:0",
+                "-map", audio_map,
+                "-c:v", "prores_ks",
+                "-profile:v", "0",
+                "-vendor", "apl0",
+                "-pix_fmt", "yuv422p10le"
+            ]
+            if crop_params:
+                ffmpeg_command.extend(["-vf", f"crop={crop_params}"])
+            ffmpeg_command.extend([
+                "-c:a", "pcm_s24le",
+                "-sn",
+                "-threads", threads,
+                "-metadata", "scenepack by=411",
+                output_path
+            ])
+        if choice == "3":
+            output_path = os.path.join(media_dir, f"{input_filename}_h264.mp4")
+            ffmpeg_command = [
+                "ffpb", "-i", video_path,
+                "-map", "0:v:0",
+                "-map", audio_map,
+                "-c:v", "libx264",
+                "-preset", "medium",
+                "-crf", "8",
+                "-c:a", "pcm_s24le",
+                "-sn",
+                "-threads", threads,
+                "-metadata", "scenepack by=411",
+                output_path
+            ]
+        else:
+            print("Invalid choice. Please enter 1, 2, or 3.")
+            return
+        subprocess.run(ffmpeg_command, check=True)
+        print("Conversion complete!")
+    except subprocess.CalledProcessError as e:
+        print(f"Conversion failed! Error: {e}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+def clear_screen():
+    os.system('cls' if platform.system() == "Windows" else 'clear')
+
+def show_easter_egg():
+    import time
+    frames = [
+        """
+                     +++++     +++++                     
+                     +++++     +++++                     
+                     +++++     +++++                     
+                     +++++     +++++                     
+                     +++++     +++++                     
+                     +++++     +++++                     
+                     +++++     +++++                     
+                     +++++     +++++                     
+      ++++++++++++++++++++++++++++++++++++++++++++++     
+       ++++++++++++++++++++++++++++++++++++++++++++      
+        +++++++++++++++++++++++++++++++++++++++++        
+          ++++++     +++++     +++++     ++++++          
+           ++++++    +++++     +++++    ++++++           
+             ++++++  +++++     +++++  ++++++             
+               +++++ +++++     +++++ ++++++              
+                ++++++++++     ++++++++++                
+                 +++++++++     +++++++++                 
+                   +++++++     +++++++                   
+                     +++++     +++++                     
+                      ++++     ++++                      
+                        ++     +++                       
+                         +     +                         
+        """,
+        """
+                     ░░░░░     ░░░░░                     
+                     ░░░░░     ░░░░░                     
+                     ░░░░░     ░░░░░                     
+                     ░░░░░     ░░░░░                     
+                     ░░░░░     ░░░░░                     
+                     ░░░░░     ░░░░░                     
+                     ░░░░░     ░░░░░                     
+                     ░░░░░     ░░░░░                     
+      ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░     
+       ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      
+        ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░        
+          ░░░░░░     ░░░░░     ░░░░░     ░░░░░░          
+           ░░░░░░    ░░░░░     ░░░░░    ░░░░░░           
+             ░░░░░░  ░░░░░     ░░░░░  ░░░░░░             
+               ░░░░░ ░░░░░     ░░░░░ ░░░░░              
+                ░░░░░░░░░░     ░░░░░░░░░░                
+                 ░░░░░░░░░     ░░░░░░░░░                 
+                   ░░░░░░░     ░░░░░░░                   
+                     ░░░░░     ░░░░░                     
+                      ░░░░     ░░░░                      
+                        ░░     ░░░                       
+                         ░     ░                         
+        """
+    ]
+    if platform.system() == "Windows":
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(0, "You found the secret! 411", "Easter Egg", 0)
+    clear_screen()
+    print("🎮 You found the secret! 🎮")
+    for _ in range(5):
+        for frame in frames:
+            print("\033[H")
+            print(frame)
+            print("\n411 Easter Egg Found! 🎉")
+            time.sleep(0.5)
+    print("\nCongratulations! You discovered the Windows 11 easter egg! 🎉")
+    time.sleep(2)
+    main()
+
+def media_info():
+    def check_mediainfo():
+        try:
+            subprocess.run(['mediainfo', '--version'], capture_output=True)
+            return True
+        except FileNotFoundError:
+            return False
+    if not check_mediainfo():
+        print("MediaInfo not found. Installing MediaInfo...")
+        install_media_info()
+        if not check_mediainfo():
+            print("Failed to install MediaInfo. Please try installing manually.")
             input("\nPress Enter to continue...")
             return
-    else:
-        resolution = available_resolutions[0]
-    
-    input("\nPress Enter to continue...")
-    clear_screen()
-
-def initialize_config():
-    # Update config directory path
-    config_dir = Path(os.getenv('LOCALAPPDATA')) / '411'
-    config_file = config_dir / 'settings.json'
-    
-    if not config_file.exists():
-        config_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Create 411media folder
-        videos_dir = Path(os.path.expandvars('%HOMEPATH%')) / 'Videos' / '411media'
-        videos_dir.mkdir(parents=True, exist_ok=True)
-
-        videos_dir1 = Path(os.path.expandvars('%HOMEPATH%')) / 'Videos' / '411encoded'
-        videos_dir1.mkdir(parents=True, exist_ok=True)
-        
-        print("\n=== First Time Setup ===")
-        print("\nDefault paths have been created:")
-        print(f"MP4 Output: {videos_dir}")
-        print(f"Encoded Output: {videos_dir1}")
-        
-        # Get encoded videos output path
-        print("\nWhere would you like encoded videos to be saved?")
-        print("Press Enter to use default location (Videos/411media)")
-        encoded_path = input("Path: ").strip() or str(videos_dir)
-        
-        config = {
-            'mp4_output': str(videos_dir),
-            'encoded_output': encoded_path
-        }
-        
-        with open(config_file, 'w') as f:
-            json.dump(config, f, indent=4)
-            
-        return config
-    else:
-        with open(config_file, 'r') as f:
-            return json.load(f)
-
-def convert_mkv_to_mp4(config):
-    print("\n=== MKV to MP4 Converter ===")
-    print("\nDrag and drop your MKV file here (or paste the full path):")
-    input_file = input().strip('"')
-    
-    if not os.path.exists(input_file):
-        print("File not found!")
+    print("\nDrag and drop a media file here (or paste the path) and press Enter:")
+    file_path = input().strip()
+    file_path = file_path.strip('"').strip("'")
+    if not os.path.exists(file_path):
+        print("\nError: File not found")
         input("\nPress Enter to continue...")
         return
-        
-    output_dir = Path(config['mp4_output'])
-    output_file = output_dir / f"{Path(input_file).stem}.mp4"
-    
-    # Get audio stream info
-    probe_cmd = f'ffprobe -v error -select_streams a -show_entries stream=channels -of json "{input_file}"'
-    result = subprocess.run(probe_cmd, capture_output=True, text=True)
-    audio_info = json.loads(result.stdout)
-    
-    audio_channels = 0
-    for stream in audio_info.get('streams', []):
-        channels = stream.get('channels', 0)
-        if channels > audio_channels:
-            audio_channels = channels
-    
-    # Set audio mapping based on channels
-    if audio_channels <= 2:  # Stereo
-        audio_params = "-c:a copy"
-    elif audio_channels == 6:  # 5.1
-        audio_params = "-c:a copy"
-    else:  # 7.1 or higher
-        audio_params = "-c:a ac3 -ac 6"  # Convert to 5.1
-    
-    cmd = f'ffmpeg -i "{input_file}" -c:v copy {audio_params} -sn "{output_file}"'
-    
     try:
-        subprocess.run(cmd, check=True)
-        print(f"\nConversion complete! File saved to: {output_file}")
-    except subprocess.CalledProcessError as e:
-        print(f"\nError during conversion: {e}")
-    
-    input("\nPress Enter to continue...")
+        result = subprocess.run(['mediainfo', file_path], capture_output=True, text=True)
+        clear_screen()
+        print("\nMediaInfo Analysis Results:\n")
+        print(result.stdout)
+        input("\nPress Enter to continue...")
+        clear_screen()
+    except Exception as e:
+        print(f"\nError running MediaInfo: {e}")
+        input("\nPress Enter to continue...")
+        clear_screen()
+
+def media_tools():
     clear_screen()
+    print("Media Tools Menu")
+    print("\n1. MediaInfo")
+    print("\n2. BluRay/WEB Info")
+    print("\n3. Go Back")
+    choice = input("\nEnter your choice: ").strip()
+    if choice == "1":
+        clear_screen()
+        media_info()
+    elif choice == "2":
+        clear_screen()
+        print("\nEnter the Blu-ray.com URL: ")
+        url = input().strip()
+        if url:
+            details = get_movie_details(url)
+            if "Error" in details:
+                print(f"\nError: {details['Error']}")
+            else:
+                clear_screen()
+                print("\nVideo Details:")
+                print(details.get("Video", "N/A"))
+                print("\nAudio Details:")
+                print(details.get("Audio", "N/A"))
+            input("\nPress Enter to continue...")
+            clear_screen()
+    elif choice == "3":
+        main()
+
+def installers_and_uninstallers():
+    clear_screen()
+    print("Installers & Uninstallers Menu")
+    print("\n1. Install All 3")
+    print("\n2. Install FFmpeg")
+    print("\n3. Install DMFS")
+    print("\n4. Install MediaInfo")
+    print("\n5. Uninstall Both")
+    print("\n6. Uninstall DMFS")
+    print("\n7. Uninstall FFmpeg")
+    choice = input("\nEnter your choice: ").strip()
+    if choice == "1":
+        install_all_3()
+    elif choice == "2":
+        download_ffmpeg()
+    elif choice == "3":
+        install_dmfs()
+    elif choice == "4":
+        install_media_info()
+    elif choice == "5":
+        uninstall_both()
+    elif choice == "6":
+        uninstall_dmfs()
+    elif choice == "7":
+        uninstall_ffmpeg()
+
+def generate_usage_bars():
+    bar_length = 30
+    default_bar_color = "#9656ce"
+    high_usage_color = "#FF0000"
+    mem = psutil.virtual_memory()
+    mem_usage = mem.percent
+    cpu_usage = psutil.cpu_percent()
+    mem_bar_color = default_bar_color if mem_usage <= 90 else high_usage_color
+    cpu_bar_color = default_bar_color if cpu_usage <= 90 else high_usage_color
+    mem_filled = f"[{mem_bar_color}]/[/{mem_bar_color}]" * int(bar_length * mem_usage // 100)
+    mem_empty = "[white]/[/white]" * (bar_length - int(bar_length * mem_usage // 100))
+    mem_bar = f"[ {mem_filled}{mem_empty} ]"
+    cpu_filled = f"[{cpu_bar_color}]/[/{cpu_bar_color}]" * int(bar_length * cpu_usage // 100)
+    cpu_empty = "[white]/[/white]" * (bar_length - int(bar_length * cpu_usage // 100))
+    cpu_bar = f"[ {cpu_filled}{cpu_empty} ]"
+    console.clear()
+    percentage_color = "#5865F2"
+    console.print(f"Mem% -= {mem_bar} =- [bold {percentage_color}]{mem_usage:.2f}%[/bold {percentage_color}]")
+    console.print(f"CPU% -= {cpu_bar} =- [bold {percentage_color}]{cpu_usage:.2f}%[/bold {percentage_color}]")
+    
+    if platform.system() == "Darwin":
+        partitions = [psutil.disk_partitions()[0]]  # Only main drive
+    else:
+        partitions = psutil.disk_partitions()
+    
+    for partition in partitions:
+        try:
+            disk = psutil.disk_usage(partition.mountpoint)
+            disk_usage = disk.percent
+            disk_bar_color = default_bar_color if disk_usage <= 90 else high_usage_color
+            disk_filled = f"[{disk_bar_color}]/[/{disk_bar_color}]" * int(bar_length * disk_usage // 100)
+            disk_empty = "[white]/[/white]" * (bar_length - int(bar_length * disk_usage // 100))
+            disk_bar = f"[ {disk_filled}{disk_empty} ]"
+            console.print(
+                f"Drive {partition.device} -= {disk_bar} =- [bold {percentage_color}]{disk_usage:.2f}%[/bold {percentage_color}]"
+            )
+        except PermissionError:
+            console.print(f"Drive {partition.device} - [bold red]Access Denied[/bold red]")
 
 def main():
     run_as_admin()
-    config = initialize_config()
-    
     while True:
-        choice = show_menu()
-        
-        if choice == "1":
-            while True:
-                installer_choice = show_installer_menu()
-                if installer_choice == "1":
-                    check_installations()
-                elif installer_choice == "2":
-                    clear_screen()
-                    print("\nStarting installation...")
-                    try:
-                        download_ffmpeg(safe_install=True)
-                    except Exception as e:
-                        print(f"Error with safe install, trying alternative method...")
-                        download_ffmpeg(safe_install=False)
-                    try:
-                        install_dmfs()
-                    except Exception as e:
-                        print(f"Error installing DMFS: {e}")
-                    try:
-                        install_dokan()
-                    except Exception as e:
-                        print(f"Error installing Dokan, contact support: {e}")
-                    input("\nPress Enter to continue...")
-                    clear_screen()
-                elif installer_choice == "3":
-                    while True:
-                        clear_screen()
-                        uninstall_choice = show_uninstall_menu()
-                        if uninstall_choice in ["1", "2", "3"]:
-                            if uninstall_choice == "1":
-                                uninstall_ffmpeg()
-                            elif uninstall_choice == "2":
-                                uninstall_dmfs()
-                            elif uninstall_choice == "3":
-                                uninstall_ffmpeg()
-                                uninstall_dmfs()
-                            input("\nPress Enter to continue...")
-                            clear_screen()
-                            break
-                        elif uninstall_choice == "4":
-                            clear_screen()
-                            break
-                        else:
-                            print("\nInvalid option. Please try again.")
-                            input("Press Enter to continue...")
-                elif installer_choice == "4":
-                    clear_screen()
-                    break
-                else:
-                    print("\nInvalid option. Please try again.")
-                    input("Press Enter to continue...")
-                    clear_screen()
-                    
+        generate_usage_bars()
+        print("\n")
+        print("\n")
+        print("====================================")
+        print("               CLI                  ")
+        print("====================================")
+        print("1. Installers & Uninstallers")
+        print("2. Set Preset")
+        print("3. Convert MKV to MP4")
+        print("4. Media Tools")
+        print("5. 411 Website")
+        print("6. Exit")
+        print("====================================")
+        choice = input("\nEnter your choice: ").strip()
+        if choice == "411":
+            show_easter_egg()
+        elif choice == "secretcode":
+            full_ffmpeg_access()
+        elif choice == "1":
+            installers_and_uninstallers()
         elif choice == "2":
-            handle_presets()
+            set_preset()
         elif choice == "3":
-            calculate_crop()
+            mkv_to_mp4()
         elif choice == "4":
-            print("\n=== Media Info ===")
-            print("\nEnter the Blu-ray.com URL:")
-            url = input().strip()
-            if url:
-                details = get_movie_details(url)
-                if "Error" in details:
-                    print(f"\nError: {details['Error']}")
-                else:
-                    print("\nVideo Details:")
-                    print(details.get("Video", "N/A"))
-                    print("\nAudio Details:")
-                    print(details.get("Audio", "N/A"))
-            input("\nPress Enter to continue...")
-            clear_screen()
+            media_tools()
         elif choice == "5":
-            convert_mkv_to_mp4(config)
-        elif choice == "6":
             open_website()
-        elif choice == "7":
-            print("\nThank you for using the app. Goodbye!")
-            sys.exit(0)
-        else:
-            print("\nInvalid option. Please try again.")
-            input("Press Enter to continue...")
+        elif choice == "6" or choice.lower() == 'q':
             clear_screen()
+            print("Goodbye.")
+            sys.exit()
+        else:
+            print("Invalid choice.")
+            time.sleep(1)
 
 if __name__ == "__main__":
     main()
