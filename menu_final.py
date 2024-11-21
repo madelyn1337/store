@@ -5,17 +5,15 @@ import platform
 import sys
 import time
 import readline
-import atexit
 import requests
 import zipfile
 from pathlib import Path
 import urllib.request
 import shutil
 from bs4 import BeautifulSoup
-import threading
 from rich.console import Console
-import tempfile
 import ctypes
+import json
 
 console = Console()
 
@@ -269,6 +267,62 @@ def get_video_folders():
     os.makedirs(media_dir, exist_ok=True)
     os.makedirs(encoded_dir, exist_ok=True)
     return folder_411, media_dir, encoded_dir
+def create_nfo_file(input_filename, encoded_dir):
+    try:
+        encoded_file = os.path.join(encoded_dir, "encoded.mp4")
+        nfo_file = os.path.join(encoded_dir, f"{input_filename}.nfo")
+        
+        # Run mediainfo to get JSON output
+        result = subprocess.run(['mediainfo', '--Output=JSON', encoded_file], 
+                              capture_output=True, text=True)
+        media_info = json.loads(result.stdout)
+        
+        # Extract video track info
+        video_track = next((track for track in media_info['media']['track'] 
+                          if track['@type'] == 'Video'), None)
+        # Extract audio track info
+        audio_track = next((track for track in media_info['media']['track'] 
+                          if track['@type'] == 'Audio'), None)
+        
+        if video_track and audio_track:
+            nfo_content = (
+                f"Resolution: {video_track.get('Width', '')}x{video_track.get('Height', '')}\n"
+                f"FPS: {video_track.get('FrameRate', '')}\n"
+                f"Bitrate: {video_track.get('BitRate', '')}\n"
+                f"Codec Format + Profile: {video_track.get('Format', '')} {video_track.get('Format_Profile', '')}\n"
+                f"Duration: {video_track.get('Duration', '')}\n"
+                f"Aspect Ratio: {video_track.get('DisplayAspectRatio', '')}\n\n"
+                f"Audio Format: {audio_track.get('Format', '')}\n"
+                f"Bitrate: {audio_track.get('BitRate', '')}\n"
+                f"Channels: {audio_track.get('Channels', '')}\n"
+            )
+            
+            with open(nfo_file, 'w', encoding='utf-8') as f:
+                f.write(nfo_content)
+    except Exception as e:
+        print(f"Error creating NFO file: {e}")
+
+def watch_for_completion(encoded_dir, input_filename):
+    encoded_file = os.path.join(encoded_dir, "encoded.mp4")
+    last_size = -1
+    unchanged_count = 0
+    
+    while True:
+        time.sleep(10)  # Check every 10 seconds
+        if os.path.exists(encoded_file):
+            current_size = os.path.getsize(encoded_file)
+            
+            # If file size hasn't changed in 3 checks (30 seconds), consider it complete
+            if current_size == last_size:
+                unchanged_count += 1
+                if unchanged_count >= 3:
+                    # Wait an additional 5 seconds to be safe
+                    time.sleep(5)
+                    create_nfo_file(input_filename, encoded_dir)
+                    break
+            else:
+                unchanged_count = 0
+                last_size = current_size
 
 def detect_black_bars(video_path):
     try:
@@ -303,11 +357,26 @@ def set_preset():
         threads = min(cpu_cores - 2, 12)
         crf = 18
         x265_params = "aq-mode=3:aq-strength=0.9:psy-rd=2.0:deblock=-1,-1"
+
+    # Get the input filename from DMFS virtual folder
+    dmfs_virtual = "C:/DMFS/virtual"
+    try:
+        # Get the first .avi file in the virtual folder
+        avi_files = [f for f in os.listdir(dmfs_virtual) if f.endswith('.avi')]
+        if avi_files:
+            input_filename = os.path.splitext(avi_files[0])[0]
+        else:
+            input_filename = "encoded"  # fallback name if no .avi found
+    except:
+        input_filename = "encoded"  # fallback name if folder access fails
+    
     _, _, output_dir = get_video_folders()
     readline.add_history(output_dir)
+    
     if not os.path.isdir(output_dir):
         print("Invalid directory. Exiting.")
         return
+
     is_grainy = input("Is the movie extremely grainy (e.g., Texas Chainsaw Massacre)? (y/n): ").strip().lower()
     if cpu_cores > 20:
         threads = 28
@@ -349,6 +418,19 @@ def set_preset():
                 winreg.SetValueEx(key, "endAfterRunningCommand", 0, winreg.REG_DWORD, 1)
                 winreg.SetValueEx(key, "pcmAudioInAvi", 0, winreg.REG_DWORD, 1)
                 winreg.SetValueEx(key, "commandToRunOnFsStart", 0, winreg.REG_SZ, ffmpeg_command)
+
+            # Start a file watcher in a separate thread
+            folder_411, _, encoded_dir = get_video_folders()
+            input_filename = os.path.splitext(os.path.basename(output_dir))[0]
+            
+            import threading
+            watcher_thread = threading.Thread(
+                target=watch_for_completion, 
+                args=(encoded_dir, input_filename),
+                daemon=True
+            )
+            watcher_thread.start()
+
         except PermissionError:
             print("Error: Run the script with administrator privileges to modify registry keys.")
 
@@ -576,10 +658,24 @@ def media_info():
         clear_screen()
         return
     try:
-        result = subprocess.run(['mediainfo', file_path], capture_output=True, text=True)
+        result = subprocess.run(['mediainfo', '--Output=JSON', file_path], capture_output=True, text=True)
         clear_screen()
         print("\nMediaInfo Analysis Results:\n")
-        print(result.stdout)
+        # Print the human-readable version
+        human_readable = subprocess.run(['mediainfo', file_path], capture_output=True, text=True)
+        print(human_readable.stdout)
+        
+        # Ask about export
+        export_choice = input("\nWould you like to export this information to JSON? (y/n): ").lower()
+        if export_choice == 'y':
+            folder_411, _, _ = get_video_folders()
+            base_name = os.path.splitext(os.path.basename(file_path))[0]
+            json_path = os.path.join(folder_411, f"{base_name}_mediainfo.json")
+            
+            with open(json_path, 'w', encoding='utf-8') as f:
+                f.write(result.stdout)
+            print(f"\nJSON exported to: {json_path}")
+        
         input("\nPress Enter to continue...")
         clear_screen()
     except Exception as e:
