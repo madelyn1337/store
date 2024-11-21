@@ -61,29 +61,60 @@ def is_ffmpeg_installed():
 def install_media_info():
     try:
         if platform.system() == "Windows":
-            url = "https://mediaarea.net/download/binary/mediainfo/24.01/MediaInfo_CLI_24.01_Windows_x64.zip"
-            temp_path = os.path.join(os.getenv('TEMP'), "mediainfo.zip")
+            url = "https://mediaarea.net/download/binary/mediainfo/24.11/MediaInfo_CLI_24.11_Windows_x64.zip"
+            temp_dir = os.path.join(os.getenv('TEMP'), "mediainfo_temp")
+            os.makedirs(temp_dir, exist_ok=True)
+            zip_path = os.path.join(temp_dir, "mediainfo.zip")
+            
             print("Downloading MediaInfo...")
             response = requests.get(url)
-            with open(temp_path, 'wb') as f:
+            with open(zip_path, 'wb') as f:
                 f.write(response.content)
-            with zipfile.ZipFile(temp_path, 'r') as zip_ref:
-                zip_ref.extractall(os.path.join(os.getenv('TEMP'), "mediainfo"))
-            mediainfo_exe = os.path.join(os.getenv('TEMP'), "mediainfo", "mediainfo.exe")
-            ffmpeg_dir = Path("C:/Program Files/ffmpeg")
-            if ffmpeg_dir.exists():
-                shutil.move(mediainfo_exe, ffmpeg_dir / "mediainfo.exe")
-            shutil.rmtree(os.path.join(os.getenv('TEMP'), "mediainfo"))
-            os.remove(temp_path)
-        else:
-            url = "https://github.com/madelyn1337/store/raw/refs/heads/main/mediainfo.pkg"
-            temp_path = os.path.join(os.getenv('TEMP'), "mediainfo.pkg")
-            response = requests.get(url)
-            with open(temp_path, 'wb') as f:
-                f.write(response.content)
-            subprocess.run(["sudo", "installer", "-pkg", os.path.join(os.getenv('TEMP'), "mediainfo.pkg"), "-target", "/Applications"], check=True)
+            
+            print("Extracting MediaInfo...")
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(temp_dir)
+            
+            # Find mediainfo.exe in the extracted contents
+            mediainfo_exe = None
+            for root, _, files in os.walk(temp_dir):
+                if "mediainfo.exe" in [f.lower() for f in files]:  # Case-insensitive search
+                    mediainfo_exe = os.path.join(root, next(f for f in files if f.lower() == "mediainfo.exe"))
+                    break
+            
+            if mediainfo_exe:
+                # Try to install to FFmpeg directory first
+                ffmpeg_dir = Path("C:/Program Files/ffmpeg")
+                if ffmpeg_dir.exists():
+                    dest_path = ffmpeg_dir / "mediainfo.exe"
+                else:
+                    # Create FFmpeg directory if it doesn't exist
+                    ffmpeg_dir.mkdir(parents=True, exist_ok=True)
+                    dest_path = ffmpeg_dir / "mediainfo.exe"
+                
+                # Copy the file with elevated privileges
+                try:
+                    shutil.copy2(mediainfo_exe, dest_path)
+                    print(f"MediaInfo installed successfully to {dest_path}")
+                    
+                    # Add FFmpeg directory to PATH if not already there
+                    add_to_path(str(ffmpeg_dir))
+                except PermissionError:
+                    print("Error: Insufficient permissions. Please run with administrator privileges.")
+                except Exception as e:
+                    print(f"Error copying file: {e}")
+            else:
+                print("Error: mediainfo.exe not found in the downloaded package")
+            
+            # Clean up
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception as e:
+                print(f"Warning: Could not clean up temporary files: {e}")
+                
     except Exception as e:
         print(f"Error installing MediaInfo: {e}")
+        print("Please try running the script with administrator privileges")
 
 def is_dmfs_installed():
     program_files = Path("C:/Program Files/DebugMode/FrameServer")
@@ -621,7 +652,7 @@ def show_easter_egg():
                      ░░░░░     ░░░░░                     
                      ░░░░░     ░░░░░                     
       ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░     
-       ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      
+       ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      
         ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░        
           ░░░░░░     ░░░░░     ░░░░░     ░░░░░░          
            ░░░░░░    ░░░░░     ░░░░░    ░░░░░░           
