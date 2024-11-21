@@ -670,7 +670,7 @@ def generate_usage_bars():
     console.print(f"CPU% -= {cpu_bar} =- [bold {percentage_color}]{cpu_usage:.2f}%[/bold {percentage_color}]")
     
     if platform.system() == "Darwin":
-        partitions = [psutil.disk_partitions()[0]]  # Only main drive
+        partitions = [psutil.disk_partitions()[0]]
     else:
         partitions = psutil.disk_partitions()
     
@@ -711,19 +711,19 @@ def main():
         elif choice == "secretcode":
             clear_screen()
             full_ffmpeg_access()
-        elif choice in ["1", "2"]:  # Handle admin-required options
+        elif choice in ["1", "2"]:
             if not is_admin():
                 clear_screen()
                 print("Launching with admin privileges...")
                 if platform.system() == "Windows":
                     script = os.path.abspath(sys.argv[0])
-                    params = f'"{script}" {choice}'  # Pass the menu choice as parameter
+                    params = f'"{script}" {choice}'
                     ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, params, None, 1)
                 else:
-                    os.execvp('sudo', ['sudo', 'python3'] + sys.argv + [choice])
-                sys.exit()
+                    subprocess.Popen(['sudo', 'python3'] + sys.argv + [choice])
+                time.sleep(1)
+                continue
             else:
-                # We're already admin, handle the choice
                 if choice == "1":
                     clear_screen()
                     installers_and_uninstallers()
@@ -759,5 +759,5 @@ if __name__ == "__main__":
         elif choice == "2":
             clear_screen()
             set_preset()
-        sys.exit()
+        sys.exit()  # Only exit the admin window
     main()
