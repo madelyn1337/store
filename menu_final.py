@@ -210,6 +210,8 @@ def check_installations():
     print("\n=== Installation Status ===")
     print(f"FFmpeg: {'Installed ✓' if is_ffmpeg_installed() else 'Not Installed ✗'}")
     print(f"DMFS: {'Installed ✓' if is_dmfs_installed() else 'Not Installed ✗'}")
+    adobe_plugin = Path("C:/Program Files/Adobe/Common/Plug-ins/7.0/MediaCore/dfscPremiereOut.prm")
+    print(f"Adobe Plugin: {'Installed ✓' if adobe_plugin.exists() else 'Not Installed ✗'}")
     input("\nPress Enter to continue...")
     clear_screen()
 
@@ -753,6 +755,7 @@ def installers_and_uninstallers():
     print("\n5. Uninstall Both")
     print("\n6. Uninstall DMFS")
     print("\n7. Uninstall FFmpeg")
+    print("\n8. Check Installations")
     choice = input("\nEnter your choice: ").strip()
     if choice == "1":
         clear_screen()
@@ -775,6 +778,9 @@ def installers_and_uninstallers():
     elif choice == "7":
         clear_screen()
         uninstall_ffmpeg()
+    elif choice == "8":
+        clear_screen()
+        check_installations()
 
 def generate_usage_bars():
     bar_length = 30
