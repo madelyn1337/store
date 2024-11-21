@@ -15,6 +15,7 @@ from bs4 import BeautifulSoup
 import threading
 from rich.console import Console
 import tempfile
+import ctypes
 
 console = Console()
 
@@ -572,6 +573,7 @@ def media_info():
     clear_screen()
     file_path = get_file_path("Enter the media file path (or drag and drop the file here):")
     if not file_path:
+        clear_screen()
         return
     try:
         result = subprocess.run(['mediainfo', file_path], capture_output=True, text=True)
@@ -626,18 +628,25 @@ def installers_and_uninstallers():
     print("\n7. Uninstall FFmpeg")
     choice = input("\nEnter your choice: ").strip()
     if choice == "1":
+        clear_screen()
         install_all_3()
     elif choice == "2":
+        clear_screen()
         download_ffmpeg()
     elif choice == "3":
+        clear_screen()
         install_dmfs()
     elif choice == "4":
+        clear_screen()
         install_media_info()
     elif choice == "5":
+        clear_screen()
         uninstall_both()
     elif choice == "6":
+        clear_screen()
         uninstall_dmfs()
     elif choice == "7":
+        clear_screen()
         uninstall_ffmpeg()
 
 def generate_usage_bars():
@@ -680,8 +689,9 @@ def generate_usage_bars():
             console.print(f"Drive {partition.device} - [bold red]Access Denied[/bold red]")
 
 def main():
-    #run_as_admin()
     while True:
+        clear_screen()
+        generate_usage_bars()
         print("\n")
         print("\n")
         print("====================================")
@@ -695,33 +705,59 @@ def main():
         print("6. Exit")
         print("====================================")
         choice = input("\nEnter your choice: ").strip()
-        print("\n")
-        print("\n")
-        print("\n")
-        generate_usage_bars()
         if choice == "411":
+            clear_screen()
             show_easter_egg()
         elif choice == "secretcode":
+            clear_screen()
             full_ffmpeg_access()
-        elif choice == "1":
-            run_as_admin()
-            installers_and_uninstallers()
-        elif choice == "2":
-            run_as_admin()
-            set_preset()
+        elif choice in ["1", "2"]:  # Handle admin-required options
+            if not is_admin():
+                clear_screen()
+                print("Launching with admin privileges...")
+                if platform.system() == "Windows":
+                    script = os.path.abspath(sys.argv[0])
+                    params = f'"{script}" {choice}'  # Pass the menu choice as parameter
+                    ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, params, None, 1)
+                else:
+                    os.execvp('sudo', ['sudo', 'python3'] + sys.argv + [choice])
+                sys.exit()
+            else:
+                # We're already admin, handle the choice
+                if choice == "1":
+                    clear_screen()
+                    installers_and_uninstallers()
+                elif choice == "2":
+                    clear_screen()
+                    set_preset()
         elif choice == "3":
+            clear_screen()
             mkv_to_mp4()
         elif choice == "4":
+            clear_screen()
             media_tools()
         elif choice == "5":
+            clear_screen()
             open_website()
-        elif choice == "6" or choice.lower() == 'q':
+        elif choice == "6":
             clear_screen()
             print("Goodbye.")
             sys.exit()
+        elif choice.lower() == 'q':
+            continue  # Refresh the main menu
         else:
-            print("Invalid choice.")
+            print("Invalid choice. Please try again.")
             time.sleep(1)
 
 if __name__ == "__main__":
+    # Check if we were launched with a specific menu choice
+    if len(sys.argv) > 1 and sys.argv[1] in ["1", "2"]:
+        choice = sys.argv[1]
+        if choice == "1":
+            clear_screen()
+            installers_and_uninstallers()
+        elif choice == "2":
+            clear_screen()
+            set_preset()
+        sys.exit()
     main()
