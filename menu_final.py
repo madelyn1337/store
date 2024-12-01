@@ -1191,22 +1191,22 @@ class VideoProcessor:
             
     def set_preset(self):
         """Configure encoding preset settings with advanced options"""
-        # Check if we're running as admin
+        # First, always get the source file path, regardless of admin status
+        self.clear_screen()
+        console.print("[cyan]Drag and drop your source video file here (or enter the path):[/cyan]")
+        file_path = input().strip()
+        
+        # Remove quotes if present (from drag and drop)
+        file_path = file_path.strip('"').strip("'")
+        
+        # Validate file exists
+        if not Path(file_path).is_file():
+            console.print("[red]Invalid file path or file does not exist[/red]")
+            input("\nPress Enter to continue...")
+            return
+        
+        # If not admin, store path and relaunch
         if not is_admin():
-            # Get source file path first
-            self.clear_screen()
-            console.print("[cyan]Drag and drop your source video file here (or enter the path):[/cyan]")
-            file_path = input().strip()
-            
-            # Remove quotes if present (from drag and drop)
-            file_path = file_path.strip('"').strip("'")
-            
-            # Validate file exists
-            if not Path(file_path).is_file():
-                console.print("[red]Invalid file path or file does not exist[/red]")
-                input("\nPress Enter to continue...")
-                return
-            
             # Store path in temp file
             temp_dir = Path(os.getenv('TEMP'))
             temp_file = temp_dir / '411_source_path.tmp'
@@ -1224,15 +1224,16 @@ class VideoProcessor:
             return
         
         try:
-            # We're running as admin, read the source path from temp file
+            # We're running as admin, read the source path from temp file if it exists
             temp_dir = Path(os.getenv('TEMP'))
             temp_file = temp_dir / '411_source_path.tmp'
             
-            if not temp_file.exists():
-                raise Exception("Source file path not found. Please try again.")
-            
-            input_file = Path(temp_file.read_text().strip())
-            temp_file.unlink()  # Clean up temp file
+            if temp_file.exists():
+                input_file = Path(temp_file.read_text().strip())
+                temp_file.unlink()  # Clean up temp file
+            else:
+                # If no temp file exists, use the file_path we just got
+                input_file = Path(file_path)
             
             # Continue with existing preset logic
             probe = ffmpeg.probe(str(input_file))
@@ -1368,7 +1369,7 @@ class VideoProcessor:
                 
                 # Complete command with output
                 output_path = scenepacks_dir / f"{name_answer['output_name']}.mp4"
-                ffmpeg_command = f'powershell.exe -c "Get-ChildItem \\"C:\\DMFS\\virtual\\*.avi\\" | ForEach-Object {{ {ffmpeg_base} \\"\\"\\"{output_path}\\"\\"\\" }}"'
+                ffmpeg_command = f'powershell.exe -c "Get-ChildItem \\"C:\\DMFS\\virtual\\*.avi\\" | ForEach-Object {{ {ffmpeg_base} \\"\\"{output_path}\\"\\" }}"'
                 
                 # Set registry values
                 ps_script = f'''
