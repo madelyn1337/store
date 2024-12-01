@@ -1223,15 +1223,32 @@ class VideoProcessor:
             input_file = Path(temp_file.read_text().strip())
             temp_file.unlink()  # Clean up temp file
             
-            # Continue with existing preset logic
-            probe = ffmpeg.probe(str(input_file))
-            video_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
-            audio_streams = [s for s in probe['streams'] if s['codec_type'] == 'audio']
+            cmd = [
+                'ffprobe',
+                '-v', 'quiet',
+                '-print_format', 'json',
+                '-show_streams',
+                str(input_file)
+            ]
             
-            # Rest of your existing set_preset code...
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise Exception(f"FFprobe error: {result.stderr}")
+            
+            probe_data = json.loads(result.stdout)
+            video_stream = next((stream for stream in probe_data['streams'] if stream['codec_type'] == 'video'), None)
+            audio_streams = [s for s in probe_data['streams'] if s['codec_type'] == 'audio']
+            
+            # Rest of your existing set_preset code would go here...
+            # For now, just print the stream info
+            console.print("\n[green]Successfully analyzed video file:[/green]")
+            console.print(f"Video codec: {video_stream.get('codec_name', 'unknown')}")
+            console.print(f"Number of audio streams: {len(audio_streams)}")
+            
+            input("\nPress Enter to continue...")
 
         except Exception as e:
-            console.print(f"[red]Error: {str(e)}[/red]")
+            console.print(f"[red]Error setting preset: {str(e)}[/red]")
             input("\nPress Enter to continue...")
             return
 
