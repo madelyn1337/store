@@ -1184,7 +1184,7 @@ class VideoProcessor:
         try:
             self.clear_screen()
             
-            # Get input source file first
+            # Get input source file first WITHOUT any admin checks
             questions = [
                 inquirer.Path('input_file',
                     message='Select source video file',
@@ -1198,7 +1198,7 @@ class VideoProcessor:
             ]
             
             answers = inquirer.prompt(questions)
-            if not answers:
+            if not answers:  # Handle cancel/back
                 return
 
             # Save answers to temp file
@@ -1206,17 +1206,21 @@ class VideoProcessor:
             with open(temp_file, 'w') as f:
                 json.dump(answers, f)
 
-            # Now elevate privileges and restart with temp file
+            # Only NOW check for admin and elevate if needed
             if not is_admin():
                 console.print("Launching with admin privileges...")
                 if platform.system() == "Windows":
                     script = os.path.abspath(sys.argv[0])
                     params = f'"{script}" preset_continue'
                     ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, params, None, 1)
+                    time.sleep(1)  # Give time for the new process to start
+                    return
                 else:
                     subprocess.Popen(['sudo', 'python3'] + sys.argv + ["preset_continue"])
-                return
+                    time.sleep(1)
+                    return
 
+            # If we're already admin, continue directly
             self._continue_preset_setup()
 
         except Exception as e:
