@@ -1191,7 +1191,6 @@ class VideoProcessor:
             
     def set_preset(self):
         """Configure encoding preset settings with advanced options"""
-        # First, always get the source file path, regardless of admin status
         self.clear_screen()
         console.print("[cyan]Drag and drop your source video file here (or enter the path):[/cyan]")
         file_path = input().strip()
@@ -1205,14 +1204,13 @@ class VideoProcessor:
             input("\nPress Enter to continue...")
             return
         
-        # If not admin, store path and relaunch
+        # Store path in temp file
+        temp_dir = Path(os.getenv('TEMP'))
+        temp_file = temp_dir / '411_source_path.tmp'
+        temp_file.write_text(file_path)
+        
+        # If not admin, relaunch with admin privileges
         if not is_admin():
-            # Store path in temp file
-            temp_dir = Path(os.getenv('TEMP'))
-            temp_file = temp_dir / '411_source_path.tmp'
-            temp_file.write_text(file_path)
-            
-            # Relaunch with admin privileges
             console.print("Launching with admin privileges...")
             if platform.system() == "Windows":
                 script = os.path.abspath(sys.argv[0])
@@ -1224,177 +1222,21 @@ class VideoProcessor:
             return
         
         try:
-            # We're running as admin, read the source path from temp file if it exists
-            temp_dir = Path(os.getenv('TEMP'))
-            temp_file = temp_dir / '411_source_path.tmp'
-            
-            if temp_file.exists():
-                input_file = Path(temp_file.read_text().strip())
-                temp_file.unlink()  # Clean up temp file
-            else:
-                # If no temp file exists, use the file_path we just got
-                input_file = Path(file_path)
+            # We're running as admin, read the source path from temp file
+            input_file = Path(temp_file.read_text().strip())
+            temp_file.unlink()  # Clean up temp file
             
             # Continue with existing preset logic
             probe = ffmpeg.probe(str(input_file))
             video_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
-            audio_streams = [s for s in probe['streams'] if s['codec_type'] == 'audio']            
-            try:
-                self.clear_screen()
-                
-                # Get input source file
-                questions = [
-                    inquirer.Path('input_file',
-                        message='Select source video file',
-                        exists=True,
-                        path_type=inquirer.Path.FILE
-                    ),
-                    inquirer.Confirm('auto_crop',
-                        message='Enable automatic black bar detection?',
-                        default=True
-                    )
-                ]
-                
-                answers = inquirer.prompt(questions)
-                if not answers:
-                    return
-                
-                # Analyze source file
-                probe = ffmpeg.probe(answers['input_file'])
-                video_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
-                audio_streams = [stream for stream in probe['streams'] if stream['codec_type'] == 'audio']
-                
-                # Check for HDR
-                is_hdr = ('color_transfer' in video_stream and 'smpte2084' in video_stream['color_transfer'].lower()) or \
-                        ('color_primaries' in video_stream and 'bt2020' in video_stream['color_primaries'].lower())
-                        
-                # Find 5.1 audio track
-                surround_track = next((
-                    stream for stream in audio_streams 
-                    if stream.get('channels', 0) == 6
-                ), None)
-                
-                # Get crop values if requested
-                crop_values = None
-                if answers['auto_crop']:
-                    console.print("[cyan]Analyzing video for black bars...[/cyan]")
-                    crop_values = self.detect_black_bars(answers['input_file'])
-                    if crop_values:
-                        w, h, x, y = crop_values
-                        console.print(f"[green]Detected crop dimensions: {w}x{h}[/green]")
-                
-                # Get CPU thread count
-                cpu_threads = psutil.cpu_count(logical=False)
-                
-                # Get output filename
-                name_question = [
-                    inquirer.Text('output_name',
-                        message='Enter output filename (without extension)',
-                        validate=lambda _, x: bool(x.strip())
-                    )
-                ]
-                
-                name_answer = inquirer.prompt(name_question)
-                if not name_answer:
-                    return
-                
-                # Preset selection
-                preset_question = [
-                    inquirer.List('preset',
-                        message='Select encoding preset:',
-                        choices=[
-                            '411 Clarity Pro (For High Bitrate)',
-                            '411 Stream (Web Optimized)',
-                            '411 Grain Pro (High Bitrate)',
-                            '411 Grain Stream (For Web Optimized)',
-                            'Custom Encode (Admin Only)'
-                        ]
-                    )
-                ]
-                
-                preset_answer = inquirer.prompt(preset_question)
-                if not preset_answer:
-                    return
-                
-                # Handle admin preset
-                if preset_answer['preset'] == 'Custom Encode (Admin Only)':
-                    password = inquirer.Password('password',
-                        message='Enter admin password'
-                    ).execute()
-                    
-                    if password != '114':
-                        console.print("[red]Invalid password![/red]")
-                        input("\nPress Enter to continue...")
-                        return
-                    
-                    custom_cmd = inquirer.Text('command',
-                        message='Enter custom FFmpeg parameters'
-                    ).execute()
-                    
-                    encoding_params = custom_cmd
-                else:
-                    # Define preset parameters
-                    presets = {
-                        '411 Clarity Pro (For High Bitrate)': '-c:v libx265 -preset medium -crf 18 -x265-params profile=main10',
-                        '411 Stream (Web Optimized)': '-c:v libx265 -preset medium -crf 20 -x265-params profile=main10',
-                        '411 Grain Pro (For High Bitrate)': '-c:v libx265 -preset medium -crf 16 -x265-params profile=main10:grain=8',
-                        '411 Grain Stream (Web Optimized)': '-c:v libx265 -preset medium -crf 18 -x265-params profile=main10:grain=6'
-                    }
-                    encoding_params = presets[preset_answer['preset']]
-                
-                # Build the complete FFmpeg command
-                ffmpeg_base = f'ffmpeg -i "$_" -threads {cpu_threads} '
-                
-                # Add crop if detected
-                if crop_values:
-                    w, h, x, y = crop_values
-                    ffmpeg_base += f'-vf "crop={w}:{h}:{x}:{y}" '
-                
-                # Add HDR to SDR conversion if needed
-                if is_hdr:
-                    ffmpeg_base += '-vf "zscale=t=linear:npl=100,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv" '
-                
-                # Add audio processing for 5.1 to stereo conversion
-                if surround_track:
-                    ffmpeg_base += f'-af "pan=stereo|c0=FC|c1=FC" -c:a aac -b:a 576k '
-                else:
-                    ffmpeg_base += '-c:a aac -b:a 576k '
-                
-                # Add encoding parameters
-                ffmpeg_base += f'{encoding_params} '
-                
-                # Setup directories
-                scenepacks_dir = self.base_dir / 'scenepacks'
-                scenepacks_dir.mkdir(exist_ok=True)
-                
-                # Complete command with output
-                output_path = scenepacks_dir / f"{name_answer['output_name']}.mp4"
-                ffmpeg_command = f'powershell.exe -c "Get-ChildItem \\"C:\\DMFS\\virtual\\*.avi\\" | ForEach-Object {{ {ffmpeg_base} \\"\\"{output_path}\\"\\" }}"'
-                
-                # Set registry values
-                ps_script = f'''
-                Set-ItemProperty -Path "HKCU:\\Software\\DebugMode\\FrameServer" -Name "runCommandOnFsStart" -Value 1 -Type DWord
-                Set-ItemProperty -Path "HKCU:\\Software\\DebugMode\\FrameServer" -Name "endAfterRunningCommand" -Value 1 -Type DWord
-                Set-ItemProperty -Path "HKCU:\\Software\\DebugMode\\FrameServer" -Name "pcmAudioInAvi" -Value 1 -Type DWord
-                Set-ItemProperty -Path "HKCU:\\Software\\DebugMode\\FrameServer" -Name "commandToRunOnFsStart" -Value '{ffmpeg_command}'
-                '''
-                
-                result = subprocess.run(['powershell', '-Command', ps_script], capture_output=True, text=True)
-                
-                if result.returncode != 0:
-                    raise Exception(f"PowerShell Error: {result.stderr}")
-                
-                console.print("[green]Preset configured successfully![/green]")
-                
-            except Exception as e:
-                console.print(f"[red]Error setting preset: {str(e)}[/red]")
+            audio_streams = [s for s in probe['streams'] if s['codec_type'] == 'audio']
             
-            input("\nPress Enter to continue...")
+            # ... existing code ...
             
         except Exception as e:
             console.print(f"[red]Error setting preset: {str(e)}[/red]")
             input("\nPress Enter to continue...")
-            
+
     def edl_conform_menu(self):
         """Convert Premiere EDL to FFmpeg commands"""
         while True:
