@@ -18,6 +18,8 @@ import platform
 import psutil
 import ctypes
 import time
+import json
+import zipfile
 
 console = Console()
 
@@ -429,10 +431,27 @@ class VideoProcessor:
 
     def detect_hdr(self, input_file):
         """Check if video stream contains HDR metadata"""
-        probe = ffmpeg.probe(input_file)
-        video_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
-        return ('color_transfer' in video_stream and 'smpte2084' in video_stream['color_transfer'].lower()) or \
-               ('color_primaries' in video_stream and 'bt2020' in video_stream['color_primaries'].lower())
+        try:
+            # Use subprocess to run ffprobe instead of ffmpeg.probe
+            cmd = [
+                'ffprobe', 
+                '-v', 'quiet',
+                '-print_format', 'json',
+                '-show_streams',
+                str(input_file)
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise Exception(f"FFprobe error: {result.stderr}")
+            
+            probe_data = json.loads(result.stdout)
+            video_stream = next((stream for stream in probe_data['streams'] if stream['codec_type'] == 'video'), None)
+            
+            return ('color_transfer' in video_stream and 'smpte2084' in video_stream['color_transfer'].lower()) or \
+                   ('color_primaries' in video_stream and 'bt2020' in video_stream['color_primaries'].lower())
+        except Exception as e:
+            console.print(f"[yellow]Warning: Could not detect HDR: {str(e)}[/yellow]")
+            return False
 
     def detect_black_bars(self, input_file):
         """Detect letterbox/pillarbox black bars"""
@@ -900,9 +919,9 @@ class VideoProcessor:
             answer = inquirer.prompt(questions)
             
             if answer['choice'] == 'Install All':
-                self.install_all()
+                self.install_dmfs()
             elif answer['choice'] == 'Uninstall All':
-                self.uninstall_all()
+                self.uninstall_dmfs()
             elif answer['choice'] == 'Check Installations':
                 self.check_installations()
             else:
@@ -923,44 +942,55 @@ class VideoProcessor:
         try:
             self.clear_screen()
             
-            # Get CPU information
-            cpu_threads = psutil.cpu_count(logical=False)  # Physical cores
-            cpu_threads_logical = psutil.cpu_count(logical=True)  # Logical cores
+            # Replace the existing file input section with this:
+            console.print("[cyan]Drag and drop your source video file here (or enter the path):[/cyan]")
+            file_path = input().strip()
             
-            # Determine CPU capability
-            is_high_end_cpu = cpu_threads >= 8 and cpu_threads_logical >= 16
+            # Remove quotes if present (from drag and drop)
+            file_path = file_path.strip('"').strip("'")
             
-            # Get input source file
-            questions = [
-                inquirer.Path('input_file',
-                    message='Select source video file',
-                    exists=True,
-                    path_type=inquirer.Path.FILE
-                ),
+            # Validate file exists
+            if not Path(file_path).is_file():
+                raise Exception("Invalid file path or file does not exist")
+            
+            # Store file path
+            input_file = Path(file_path)
+            
+            # Detect HDR and audio tracks
+            probe = ffmpeg.probe(str(input_file))
+            video_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
+            audio_streams = [s for s in probe['streams'] if s['codec_type'] == 'audio']
+            
+            # Check for HDR
+            is_hdr = ('color_transfer' in video_stream and 'smpte2084' in video_stream['color_transfer'].lower()) or \
+                     ('color_primaries' in video_stream and 'bt2020' in video_stream['color_primaries'].lower())
+            
+            # Check for surround sound
+            surround_track = any(
+                'channels' in stream and int(stream['channels']) > 2 
+                for stream in audio_streams
+            )
+            
+            # Continue with auto crop question
+            auto_crop_question = [
                 inquirer.Confirm('auto_crop',
                     message='Enable automatic black bar detection?',
                     default=True
                 )
             ]
             
-            answers = inquirer.prompt(questions)
-            if not answers:
+            auto_crop_answer = inquirer.prompt(auto_crop_question)
+            if not auto_crop_answer:
                 return
             
-            # Analyze source file
-            probe = ffmpeg.probe(answers['input_file'])
-            video_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
-            audio_streams = [stream for stream in probe['streams'] if stream['codec_type'] == 'audio']
+            answers = {'input_file': input_file, 'auto_crop': auto_crop_answer['auto_crop']}
             
-            # Check for HDR
-            is_hdr = ('color_transfer' in video_stream and 'smpte2084' in video_stream['color_transfer'].lower()) or \
-                     ('color_primaries' in video_stream and 'bt2020' in video_stream['color_primaries'].lower())
-                     
-            # Find 5.1 audio track
-            surround_track = next((
-                stream for stream in audio_streams 
-                if stream.get('channels', 0) == 6
-            ), None)
+            # Get CPU information
+            cpu_threads = psutil.cpu_count(logical=False)  # Physical cores
+            cpu_threads_logical = psutil.cpu_count(logical=True)  # Logical cores
+            
+            # Determine CPU capability
+            is_high_end_cpu = cpu_threads >= 8 and cpu_threads_logical >= 16
             
             # Get crop values if requested
             crop_values = None
@@ -1291,14 +1321,76 @@ class VideoProcessor:
         except:
             return 0
 
-def is_admin():
-    if platform.system() == "Windows":
+    def install_dmfs(self):
+        """Install DMFS and Adobe plugin"""
+        print("\nInstalling DMFS...")
         try:
+            # Create directories with explicit error handling
+            dmfs_dir = Path("C:/Program Files/DebugMode/FrameServer")
+            adobe_dir = Path("C:/Program Files/Adobe/Common/Plug-ins/7.0/MediaCore")
+            
+            print(f"Creating directory: {dmfs_dir}")
+            dmfs_dir.mkdir(parents=True, exist_ok=True)
+            
+            print(f"Creating directory: {adobe_dir}")
+            adobe_dir.mkdir(parents=True, exist_ok=True)
+
+            # Download and install files
+            extension_url = "https://github.com/madelyn1337/store/raw/refs/heads/main/dfscPremiereOut.prm"
+            zip_url = "https://github.com/madelyn1337/store/raw/refs/heads/main/FrameServer.zip"
+            
+            # Download and install Adobe extension
+            print("Downloading Adobe extension...")
+            extension_path = adobe_dir / "dfscPremiereOut.prm"
+            response = requests.get(extension_url)
+            response.raise_for_status()
+            with open(extension_path, 'wb') as f:
+                f.write(response.content)
+            
+            # Download and extract FrameServer
+            print("Downloading FrameServer...")
+            zip_path = "FrameServer.zip"
+            response = requests.get(zip_url)
+            response.raise_for_status()
+            with open(zip_path, 'wb') as f:
+                f.write(response.content)
+            
+            print("Extracting FrameServer...")
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(dmfs_dir)
+            
+            # Clean up zip file
+            os.remove(zip_path)
+            print("Installation completed successfully!")
+            
+        except Exception as e:
+            print(f"Error installing DMFS: {e}")
+            if 'zip_path' in locals() and os.path.exists(zip_path):
+                os.remove(zip_path)
+
+    def uninstall_dmfs(self):
+        """Uninstall DMFS and Adobe plugin"""
+        print("\nUninstalling DMFS...")
+        try:
+            dmfs_dir = Path("C:/Program Files/DebugMode/FrameServer")
+            if dmfs_dir.exists():
+                os.system('rmdir /S /Q "C:\\Program Files\\DebugMode\\FrameServer"')
+            adobe_plugin = Path("C:/Program Files/Adobe/Common/Plug-ins/7.0/MediaCore/dfscPremiereOut.prm")
+            if adobe_plugin.exists():
+                os.remove(adobe_plugin)
+            print("DMFS uninstalled successfully!")
+        except Exception as e:
+            print(f"Error uninstalling DMFS: {e}")
+
+def is_admin():
+    """Check if the script is running with admin privileges"""
+    try:
+        if platform.system() == "Windows":
             return ctypes.windll.shell32.IsUserAnAdmin()
-        except:
-            return False
-    else:
-        return os.geteuid() == 0
+        else:
+            return os.geteuid() == 0
+    except:
+        return False
 
 def run_as_admin():
     if not is_admin():
