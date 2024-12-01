@@ -1484,19 +1484,13 @@ def main():
         # Check if running with command line arguments
         if len(sys.argv) > 1:
             processor = VideoProcessor()
-            if sys.argv[1] in ["1", "2"]:  # Handle numeric choices for installers/preset
+            if sys.argv[1] in ["1"]:  # Handle numeric choices for installers/preset
                 choice = sys.argv[1]
                 if choice == "1":
                     processor.clear_screen()
                     processor.installers_menu()
-                elif choice == "2":
-                    processor.clear_screen()
-                    processor.set_preset()
-                sys.exit()
             elif sys.argv[1] == '-installers':
                 processor.installers_menu()
-            elif sys.argv[1] == '-preset':
-                processor.set_preset()
             sys.exit(0)
 
         # Normal menu flow
