@@ -116,18 +116,7 @@ class VideoProcessor:
                 else:
                     self.installers_menu()
             elif answer['choice'] == 'Set Preset':
-                if not is_admin():
-                    console.print("Launching with admin privileges...")
-                    if platform.system() == "Windows":
-                        script = os.path.abspath(sys.argv[0])
-                        params = f'"{script}" 2'  # Use "2" for preset menu
-                        ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, params, None, 1)
-                    else:
-                        subprocess.Popen(['sudo', 'python3'] + sys.argv + ["2"])
-                    time.sleep(1)
-                    continue
-                else:
-                    self.set_preset()
+                self.set_preset()
             elif answer['choice'] == 'Convert MKV to MP4':
                 self.video_conversion_menu()
             elif answer['choice'] == 'Create Proxies':
@@ -1177,7 +1166,7 @@ class VideoProcessor:
             answer = inquirer.prompt(questions)
             
             if answer['choice'] == 'Install All':
-                self.install_ffmpeg()
+                self.download_ffmpeg()
                 self.install_dokan()
                 self.install_dmfs()
                 self.install_media_info()
