@@ -1188,10 +1188,6 @@ class VideoProcessor:
                 self.check_installations()
             else:
                 return
-
-
-            
-
             
     def set_preset(self):
         """Configure encoding preset settings with advanced options"""
@@ -1393,10 +1389,11 @@ class VideoProcessor:
                 console.print(f"[red]Error setting preset: {str(e)}[/red]")
             
             input("\nPress Enter to continue...")
+            
         except Exception as e:
             console.print(f"[red]Error setting preset: {str(e)}[/red]")
             input("\nPress Enter to continue...")
-
+            
     def edl_conform_menu(self):
         """Convert Premiere EDL to FFmpeg commands"""
         while True:
