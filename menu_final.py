@@ -117,18 +117,7 @@ class VideoProcessor:
                 else:
                     self.installers_menu()
             elif answer['choice'] == 'Set Preset':
-                if not is_admin():
-                    console.print("Launching with admin privileges...")
-                    if platform.system() == "Windows":
-                        script = os.path.abspath(sys.argv[0])
-                        params = f'"{script}" 2'  # Use "2" for preset menu
-                        ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, params, None, 1)
-                    else:
-                        subprocess.Popen(['sudo', 'python3'] + sys.argv + ["2"])
-                    time.sleep(1)
-                    continue
-                else:
-                    self.set_preset()
+                self.set_preset()
             elif answer['choice'] == 'Convert MKV to MP4':
                 self.video_conversion_menu()
             elif answer['choice'] == 'Create Proxies':
@@ -1484,7 +1473,13 @@ def main():
         # Check if running with command line arguments
         if len(sys.argv) > 1:
             processor = VideoProcessor()
-            if sys.argv[1] in ["1"]:  # Handle numeric choices for installers/preset
+            if sys.argv[1] == "preset_continue":
+                if not is_admin():
+                    print("Error: Continuation requires admin privileges")
+                    sys.exit(1)
+                processor._continue_preset_setup()
+                sys.exit(0)
+            elif sys.argv[1] in ["1"]:  # Handle numeric choices for installers
                 choice = sys.argv[1]
                 if choice == "1":
                     processor.clear_screen()
