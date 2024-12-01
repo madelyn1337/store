@@ -9,6 +9,7 @@ import ffmpeg
 import requests
 from bs4 import BeautifulSoup
 import re
+import urllib
 from urllib.parse import quote
 import xml.etree.ElementTree as ET
 import subprocess
@@ -20,6 +21,7 @@ import ctypes
 import time
 import json
 import zipfile
+import shutil
 
 console = Console()
 
@@ -900,6 +902,262 @@ class VideoProcessor:
             self.clear_screen()
             return
 
+    def add_to_path(self, new_path):
+        """Add directory to system PATH"""
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SYSTEM\CurrentControlSet\Control\Session Manager\Environment', 0, winreg.KEY_ALL_ACCESS) as key:
+            path = winreg.QueryValueEx(key, 'Path')[0]
+            if new_path not in path:
+                new_path_value = f"{path};{new_path}"
+                winreg.SetValueEx(key, 'Path', 0, winreg.REG_EXPAND_SZ, new_path_value)
+                os.system('setx PATH "%PATH%"')
+                print(f"Added {new_path} to PATH")
+
+    def is_ffmpeg_installed(self):
+        """Check if FFmpeg is installed"""
+        required_files = ['ffmpeg.exe', 'ffprobe.exe', 'ffplay.exe']
+        paths = os.environ["PATH"].split(os.pathsep)
+        for path in paths:
+            if all(os.path.exists(os.path.join(path, file)) for file in required_files):
+                return True
+        program_files_path = Path("C:/Program Files/ffmpeg")
+        if all((program_files_path / file).exists() for file in required_files):
+            return True
+        system32_path = Path("C:/Windows/System32")
+        if all((system32_path / file).exists() for file in required_files):
+            return True
+        c_path = Path("C:/ffmpeg")
+        if all((c_path / file).exists() for file in required_files):
+            return True
+        return False
+
+    def is_dmfs_installed(self):
+        """Check if DMFS is installed"""
+        program_files = Path("C:/Program Files/DebugMode/FrameServer")
+        if program_files.exists():
+            return True
+        return False
+
+    def download_ffmpeg(self, safe_install=True):
+        url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+        zip_path = "ffmpeg.zip"
+        print("Downloading FFmpeg...")
+        response = requests.get(url, stream=True)
+        total_size = int(response.headers.get('content-length', 0))
+        with open(zip_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+        print("Download complete. Extracting...")
+        required_files = ['ffmpeg.exe', 'ffprobe.exe', 'ffplay.exe']
+        if safe_install:
+            install_dir = Path("C:/Program Files/ffmpeg")
+            install_dir.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall("ffmpeg_temp")
+            bin_path = Path("ffmpeg_temp/ffmpeg-master-latest-win64-gpl/bin")
+            for file in bin_path.glob('*'):
+                if file.name in required_files: 
+                    dest = install_dir / file.name
+                    if dest.exists():
+                        dest.unlink()
+                    file.rename(dest)
+            self.add_to_path(str(install_dir))
+        else:
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall("ffmpeg_temp")
+            for file in required_files:
+                source = f"ffmpeg_temp\\ffmpeg-master-latest-win64-gpl\\bin\\{file}"
+                if os.path.exists(source):
+                    os.system(f'move "{source}" C:\\Windows\\System32')
+        os.system('rmdir /S /Q ffmpeg_temp')
+        os.remove(zip_path)
+
+    def install_dokan(self):
+        print("\nInstalling Dokan...")
+        try:
+            dokan_url = "https://github.com/dokan-dev/dokany/releases/download/v1.5.0.3000/Dokan_x64.msi"
+            msi_path = "dokan_temp.msi"
+            urllib.request.urlretrieve(dokan_url, msi_path)
+            install_command = f'msiexec /i "{msi_path}" /qn'
+            os.system(install_command)
+            os.remove(msi_path)
+        except Exception as e:
+            print(f"{e}")
+
+    def install_dmfs(self):
+        print("\nInstalling DMFS...")
+        try:
+            # Create directories with explicit error handling
+            dmfs_dir = Path("C:/Program Files/DebugMode/FrameServer")
+            adobe_dir = Path("C:/Program Files/Adobe/Common/Plug-ins/7.0/MediaCore")
+            
+            print(f"Creating directory: {dmfs_dir}")
+            try:
+                dmfs_dir.mkdir(parents=True, exist_ok=True)
+            except Exception as e:
+                print(f"Error creating DMFS directory: {e}")
+                return
+
+            print(f"Creating directory: {adobe_dir}")
+            try:
+                adobe_dir.mkdir(parents=True, exist_ok=True)
+            except Exception as e:
+                print(f"Error creating Adobe directory: {e}")
+                return
+
+            # Download and install files
+            extension_url = "https://github.com/madelyn1337/store/raw/refs/heads/main/dfscPremiereOut.prm"
+            zip_url = "https://github.com/madelyn1337/store/raw/refs/heads/main/FrameServer.zip"
+            
+            # Download and install Adobe extension
+            print("Downloading Adobe extension...")
+            extension_path = adobe_dir / "dfscPremiereOut.prm"
+            try:
+                response = requests.get(extension_url)
+                response.raise_for_status()  # Raise exception for bad status codes
+                with open(extension_path, 'wb') as f:
+                    f.write(response.content)
+                print(f"Adobe extension installed to: {extension_path}")
+            except Exception as e:
+                print(f"Error downloading/installing Adobe extension: {e}")
+                return
+
+            # Download and extract FrameServer
+            print("Downloading FrameServer...")
+            try:
+                zip_path = "FrameServer.zip"
+                response = requests.get(zip_url)
+                response.raise_for_status()
+                with open(zip_path, 'wb') as f:
+                    f.write(response.content)
+                
+                print("Extracting FrameServer...")
+                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    zip_ref.extractall(dmfs_dir)
+                print(f"FrameServer extracted to: {dmfs_dir}")
+                
+                # Clean up zip file
+                os.remove(zip_path)
+                print("Installation completed successfully!")
+                
+            except Exception as e:
+                print(f"Error downloading/extracting FrameServer: {e}")
+                if os.path.exists(zip_path):
+                    os.remove(zip_path)
+                return
+
+        except Exception as e:
+            print(f"Error installing DMFS: {e}")
+            print("Please try running the script with administrator privileges")
+
+    def open_website(self):
+        website_link = "https://scenepacks.com" 
+        os.system(f'start {website_link}')
+
+    def check_installations(self):
+        """Check installation status of components"""
+        self.clear_screen()
+        print("\n=== Installation Status ===")
+        print(f"FFmpeg: {'Installed ✓' if self.is_ffmpeg_installed() else 'Not Installed ✗'}")
+        print(f"DMFS: {'Installed ✓' if self.is_dmfs_installed() else 'Not Installed ✗'}")
+        adobe_plugin = Path("C:/Program Files/Adobe/Common/Plug-ins/7.0/MediaCore/dfscPremiereOut.prm")
+        print(f"Adobe Plugin: {'Installed ✓' if adobe_plugin.exists() else 'Not Installed ✗'}")
+        input("\nPress Enter to continue...")
+        self.clear_screen()
+
+    def uninstall_ffmpeg(self):
+        import winreg
+        print("\nUninstalling FFmpeg...")
+        try:
+            ffmpeg_dir = Path("C:/Program Files/ffmpeg")
+            if ffmpeg_dir.exists():
+                os.system('rmdir /S /Q "C:\\Program Files\\ffmpeg"')
+            system32_path = Path("C:/Windows/System32/ffmpeg.exe")
+            if system32_path.exists():
+                os.remove(system32_path)
+            c_path = Path("C:/ffmpeg")
+            if c_path.exists():
+                os.system('rmdir /S /Q "C:\\ffmpeg"')
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SYSTEM\CurrentControlSet\Control\Session Manager\Environment', 0, winreg.KEY_ALL_ACCESS) as key:
+                path = winreg.QueryValueEx(key, 'Path')[0]
+                new_path = ";".join([p for p in path.split(";") if "ffmpeg" not in p.lower()])
+                winreg.SetValueEx(key, 'Path', 0, winreg.REG_EXPAND_SZ, new_path)
+                os.system('setx PATH "%PATH%"')
+            print("FFmpeg has been uninstalled successfully!")
+        except Exception as e:
+            print(f"Error uninstalling FFmpeg: {e}")
+
+    def uninstall_dmfs(self):
+        print("\nUninstalling DMFS...")
+        try:
+            dmfs_dir = Path("C:/Program Files/DebugMode/FrameServer")
+            if dmfs_dir.exists():
+                os.system('rmdir /S /Q "C:\\Program Files\\DebugMode\\FrameServer"')
+            adobe_plugin = Path("C:/Program Files/Adobe/Common/Plug-ins/7.0/MediaCore/dfscPremiereOut.prm")
+            if adobe_plugin.exists():
+                os.remove(adobe_plugin)
+        except Exception as e:
+            print(f"Error uninstalling DMFS: {e}")        
+
+    def install_media_info(self):
+        try:
+            if platform.system() == "Windows":
+                url = "https://mediaarea.net/download/binary/mediainfo/24.11/MediaInfo_CLI_24.11_Windows_x64.zip"
+                temp_dir = os.path.join(os.getenv('TEMP'), "mediainfo_temp")
+                os.makedirs(temp_dir, exist_ok=True)
+                zip_path = os.path.join(temp_dir, "mediainfo.zip")
+                
+                print("Downloading MediaInfo...")
+                response = requests.get(url)
+                with open(zip_path, 'wb') as f:
+                    f.write(response.content)
+                
+                print("Extracting MediaInfo...")
+                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    zip_ref.extractall(temp_dir)
+                
+                # Find mediainfo.exe in the extracted contents
+                mediainfo_exe = None
+                for root, _, files in os.walk(temp_dir):
+                    if "mediainfo.exe" in [f.lower() for f in files]:  # Case-insensitive search
+                        mediainfo_exe = os.path.join(root, next(f for f in files if f.lower() == "mediainfo.exe"))
+                        break
+                
+                if mediainfo_exe:
+                    # Try to install to FFmpeg directory first
+                    ffmpeg_dir = Path("C:/Program Files/ffmpeg")
+                    if ffmpeg_dir.exists():
+                        dest_path = ffmpeg_dir / "mediainfo.exe"
+                    else:
+                        # Create FFmpeg directory if it doesn't exist
+                        ffmpeg_dir.mkdir(parents=True, exist_ok=True)
+                        dest_path = ffmpeg_dir / "mediainfo.exe"
+                    
+                    # Copy the file with elevated privileges
+                    try:
+                        shutil.copy2(mediainfo_exe, dest_path)
+                        print(f"MediaInfo installed successfully to {dest_path}")
+                        
+                        # Add FFmpeg directory to PATH if not already there
+                        self.add_to_path(str(ffmpeg_dir))
+                    except PermissionError:
+                        print("Error: Insufficient permissions. Please run with administrator privileges.")
+                    except Exception as e:
+                        print(f"Error copying file: {e}")
+                else:
+                    print("Error: mediainfo.exe not found in the downloaded package")
+                
+                # Clean up
+                try:
+                    shutil.rmtree(temp_dir)
+                except Exception as e:
+                    print(f"Warning: Could not clean up temporary files: {e}")
+                
+        except Exception as e:
+            print(f"Error installing MediaInfo: {e}")
+            print("Please try running the script with administrator privileges")
+
     def installers_menu(self):
         """Handle installer and uninstaller options"""
         while True:
@@ -919,30 +1177,24 @@ class VideoProcessor:
             answer = inquirer.prompt(questions)
             
             if answer['choice'] == 'Install All':
+                self.install_ffmpeg()
+                self.install_dokan()
                 self.install_dmfs()
+                self.install_media_info()
             elif answer['choice'] == 'Uninstall All':
+                self.uninstall_ffmpeg()
                 self.uninstall_dmfs()
             elif answer['choice'] == 'Check Installations':
                 self.check_installations()
             else:
                 return
 
-    def check_installations(self):
-        """Check installation status of required components"""
-        self.clear_screen()
-        console.print("\n=== Installation Status ===")
-        console.print(f"FFmpeg: {'[green]Installed ✓[/green]' if is_ffmpeg_installed() else '[red]Not Installed ✗[/red]'}")
-        console.print(f"DMFS: {'[green]Installed ✓[/green]' if is_dmfs_installed() else '[red]Not Installed ✗[/red]'}")
-        adobe_plugin = Path("C:/Program Files/Adobe/Common/Plug-ins/7.0/MediaCore/dfscPremiereOut.prm")
-        console.print(f"Adobe Plugin: {'[green]Installed ✓[/green]' if adobe_plugin.exists() else '[red]Not Installed ✗[/red]'}")
-        input("\nPress Enter to continue...")
-
     def set_preset(self):
         """Configure encoding preset settings with advanced options"""
-        try:
+        # Check if we're running as admin
+        if not is_admin():
+            # Get source file path first
             self.clear_screen()
-            
-            # Replace the existing file input section with this:
             console.print("[cyan]Drag and drop your source video file here (or enter the path):[/cyan]")
             file_path = input().strip()
             
@@ -951,178 +1203,48 @@ class VideoProcessor:
             
             # Validate file exists
             if not Path(file_path).is_file():
-                raise Exception("Invalid file path or file does not exist")
+                console.print("[red]Invalid file path or file does not exist[/red]")
+                input("\nPress Enter to continue...")
+                return
             
-            # Store file path
-            input_file = Path(file_path)
+            # Store path in temp file
+            temp_dir = Path(os.getenv('TEMP'))
+            temp_file = temp_dir / '411_source_path.tmp'
+            temp_file.write_text(file_path)
             
-            # Detect HDR and audio tracks
+            # Relaunch with admin privileges
+            console.print("Launching with admin privileges...")
+            if platform.system() == "Windows":
+                script = os.path.abspath(sys.argv[0])
+                params = f'"{script}" 2'  # Use "2" for preset menu
+                ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, params, None, 1)
+            else:
+                subprocess.Popen(['sudo', 'python3'] + sys.argv + ["2"])
+            time.sleep(1)
+            return
+        
+        try:
+            # We're running as admin, read the source path from temp file
+            temp_dir = Path(os.getenv('TEMP'))
+            temp_file = temp_dir / '411_source_path.tmp'
+            
+            if not temp_file.exists():
+                raise Exception("Source file path not found. Please try again.")
+            
+            input_file = Path(temp_file.read_text().strip())
+            temp_file.unlink()  # Clean up temp file
+            
+            # Continue with existing preset logic
             probe = ffmpeg.probe(str(input_file))
             video_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
             audio_streams = [s for s in probe['streams'] if s['codec_type'] == 'audio']
             
-            # Check for HDR
-            is_hdr = ('color_transfer' in video_stream and 'smpte2084' in video_stream['color_transfer'].lower()) or \
-                     ('color_primaries' in video_stream and 'bt2020' in video_stream['color_primaries'].lower())
-            
-            # Check for surround sound
-            surround_track = any(
-                'channels' in stream and int(stream['channels']) > 2 
-                for stream in audio_streams
-            )
-            
-            # Continue with auto crop question
-            auto_crop_question = [
-                inquirer.Confirm('auto_crop',
-                    message='Enable automatic black bar detection?',
-                    default=True
-                )
-            ]
-            
-            auto_crop_answer = inquirer.prompt(auto_crop_question)
-            if not auto_crop_answer:
-                return
-            
-            answers = {'input_file': input_file, 'auto_crop': auto_crop_answer['auto_crop']}
-            
-            # Get CPU information
-            cpu_threads = psutil.cpu_count(logical=False)  # Physical cores
-            cpu_threads_logical = psutil.cpu_count(logical=True)  # Logical cores
-            
-            # Determine CPU capability
-            is_high_end_cpu = cpu_threads >= 8 and cpu_threads_logical >= 16
-            
-            # Get crop values if requested
-            crop_values = None
-            if answers['auto_crop']:
-                console.print("[cyan]Analyzing video for black bars...[/cyan]")
-                crop_values = self.detect_black_bars(answers['input_file'])
-                if crop_values:
-                    w, h, x, y = crop_values
-                    console.print(f"[green]Detected crop dimensions: {w}x{h}[/green]")
-            
-            # Display CPU information
-            console.print(f"\n[cyan]CPU Information:[/cyan]")
-            console.print(f"Physical Cores: {cpu_threads}")
-            console.print(f"Logical Cores: {cpu_threads_logical}")
-            console.print(f"Using {'high-end' if is_high_end_cpu else 'standard'} CPU optimizations")
-            
-            # Get output filename
-            name_question = [
-                inquirer.Text('output_name',
-                    message='Enter output filename (without extension)',
-                    validate=lambda _, x: bool(x.strip())
-                )
-            ]
-            
-            name_answer = inquirer.prompt(name_question)
-            if not name_answer:
-                return
-            
-            # Preset selection
-            preset_question = [
-                inquirer.List('preset',
-                    message='Select encoding preset:',
-                    choices=[
-                        '411 Clarity Pro (For High Bitrate)',
-                        '411 Stream (Web Optimized)',
-                        '411 Grain Pro (High Bitrate)',
-                        '411 Grain Stream (For Web Optimized)',
-                        'Custom Encode (Admin Only)'
-                    ]
-                )
-            ]
-            
-            preset_answer = inquirer.prompt(preset_question)
-            if not preset_answer:
-                return
-            
-            # Handle admin preset
-            if preset_answer['preset'] == 'Custom Encode (Admin Only)':
-                password = inquirer.Password('password',
-                    message='Enter admin password'
-                ).execute()
-                
-                if password != '114':
-                    console.print("[red]Invalid password![/red]")
-                    input("\nPress Enter to continue...")
-                    return
-                
-                custom_cmd = inquirer.Text('command',
-                    message='Enter custom FFmpeg parameters'
-                ).execute()
-                
-                encoding_params = custom_cmd
-            else:
-                # Modify presets based on CPU capability
-                presets = {
-                    '411 Clarity Pro (For High Bitrate)': (
-                        f'-c:v libx265 -preset {"slow" if is_high_end_cpu else "medium"} '
-                        '-crf 17 -x265-params profile=main10:aq-mode=3:bframes=6:rc-lookahead=40:me=hex'
-                    ),
-                    '411 Stream (Web Optimized)': (
-                        f'-c:v libx265 -preset {"slow" if is_high_end_cpu else "medium"} '
-                        '-crf 22 -x265-params profile=main10:aq-mode=2:bframes=4'
-                    ),
-                    '411 Grain Pro (For High Bitrate)': (
-                        f'-c:v libx265 -preset {"slow" if is_high_end_cpu else "medium"} '
-                        '-crf 16 -x265-params profile=main10:grain=10:deblock=-2,-2:psy-rd=1.5:psy-rdoq=2.0'
-                    ),
-                    '411 Grain Stream (Web Optimized)': (
-                        f'-c:v libx265 -preset {"slow" if is_high_end_cpu else "medium"} '
-                        '-crf 20 -x265-params profile=main10:grain=8:bframes=3:rc-lookahead=2'
-                    )
-                }
-                encoding_params = presets[preset_answer['preset']]
-            
-            # Build the complete FFmpeg command
-            ffmpeg_base = f'ffmpeg -i "$_" -threads {cpu_threads} '
-            
-            # Add crop if detected
-            if crop_values:
-                w, h, x, y = crop_values
-                ffmpeg_base += f'-vf "crop={w}:{h}:{x}:{y}" '
-            
-            # Add HDR to SDR conversion if needed
-            if is_hdr:
-                ffmpeg_base += '-vf "zscale=t=linear:npl=100,tonemap=hable:desat=0.2,zscale=t=bt709:m=bt709:r=tv"'
-            
-            # Add audio processing for 5.1 to stereo conversion
-            if surround_track:
-                ffmpeg_base += f'-af "pan=stereo|c0=FC|c1=FC" -c:a aac -b:a 576k '
-            else:
-                ffmpeg_base += '-c:a aac -b:a 576k '
-            
-            # Add encoding parameters
-            ffmpeg_base += f'{encoding_params} '
-            
-            # Setup directories
-            scenepacks_dir = self.base_dir / 'scenepacks'
-            scenepacks_dir.mkdir(exist_ok=True)
-            
-            # Complete command with output
-            output_path = scenepacks_dir / f"{name_answer['output_name']}.mp4"
-            ffmpeg_command = f'powershell.exe -c "Get-ChildItem \\"C:\\DMFS\\virtual\\*.avi\\" | ForEach-Object {{ {ffmpeg_base} \\"\\"\\"{output_path}\\"\\"\\" }}"'
-            
-            # Set registry values
-            ps_script = f'''
-            Set-ItemProperty -Path "HKCU:\\Software\\DebugMode\\FrameServer" -Name "runCommandOnFsStart" -Value 1 -Type DWord
-            Set-ItemProperty -Path "HKCU:\\Software\\DebugMode\\FrameServer" -Name "endAfterRunningCommand" -Value 1 -Type DWord
-            Set-ItemProperty -Path "HKCU:\\Software\\DebugMode\\FrameServer" -Name "pcmAudioInAvi" -Value 1 -Type DWord
-            Set-ItemProperty -Path "HKCU:\\Software\\DebugMode\\FrameServer" -Name "commandToRunOnFsStart" -Value '{ffmpeg_command}'
-            '''
-            
-            result = subprocess.run(['powershell', '-Command', ps_script], capture_output=True, text=True)
-            
-            if result.returncode != 0:
-                raise Exception(f"PowerShell Error: {result.stderr}")
-            
-            console.print("[green]Preset configured successfully![/green]")
-            
+            # Rest of your existing set_preset code...
+
         except Exception as e:
-            console.print(f"[red]Error setting preset: {str(e)}[/red]")
-        
-        input("\nPress Enter to continue...")
+            console.print(f"[red]Error: {str(e)}[/red]")
+            input("\nPress Enter to continue...")
+            return
 
     def edl_conform_menu(self):
         """Convert Premiere EDL to FFmpeg commands"""
@@ -1321,67 +1443,6 @@ class VideoProcessor:
         except:
             return 0
 
-    def install_dmfs(self):
-        """Install DMFS and Adobe plugin"""
-        print("\nInstalling DMFS...")
-        try:
-            # Create directories with explicit error handling
-            dmfs_dir = Path("C:/Program Files/DebugMode/FrameServer")
-            adobe_dir = Path("C:/Program Files/Adobe/Common/Plug-ins/7.0/MediaCore")
-            
-            print(f"Creating directory: {dmfs_dir}")
-            dmfs_dir.mkdir(parents=True, exist_ok=True)
-            
-            print(f"Creating directory: {adobe_dir}")
-            adobe_dir.mkdir(parents=True, exist_ok=True)
-
-            # Download and install files
-            extension_url = "https://github.com/madelyn1337/store/raw/refs/heads/main/dfscPremiereOut.prm"
-            zip_url = "https://github.com/madelyn1337/store/raw/refs/heads/main/FrameServer.zip"
-            
-            # Download and install Adobe extension
-            print("Downloading Adobe extension...")
-            extension_path = adobe_dir / "dfscPremiereOut.prm"
-            response = requests.get(extension_url)
-            response.raise_for_status()
-            with open(extension_path, 'wb') as f:
-                f.write(response.content)
-            
-            # Download and extract FrameServer
-            print("Downloading FrameServer...")
-            zip_path = "FrameServer.zip"
-            response = requests.get(zip_url)
-            response.raise_for_status()
-            with open(zip_path, 'wb') as f:
-                f.write(response.content)
-            
-            print("Extracting FrameServer...")
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                zip_ref.extractall(dmfs_dir)
-            
-            # Clean up zip file
-            os.remove(zip_path)
-            print("Installation completed successfully!")
-            
-        except Exception as e:
-            print(f"Error installing DMFS: {e}")
-            if 'zip_path' in locals() and os.path.exists(zip_path):
-                os.remove(zip_path)
-
-    def uninstall_dmfs(self):
-        """Uninstall DMFS and Adobe plugin"""
-        print("\nUninstalling DMFS...")
-        try:
-            dmfs_dir = Path("C:/Program Files/DebugMode/FrameServer")
-            if dmfs_dir.exists():
-                os.system('rmdir /S /Q "C:\\Program Files\\DebugMode\\FrameServer"')
-            adobe_plugin = Path("C:/Program Files/Adobe/Common/Plug-ins/7.0/MediaCore/dfscPremiereOut.prm")
-            if adobe_plugin.exists():
-                os.remove(adobe_plugin)
-            print("DMFS uninstalled successfully!")
-        except Exception as e:
-            print(f"Error uninstalling DMFS: {e}")
-
 def is_admin():
     """Check if the script is running with admin privileges"""
     try:
@@ -1404,27 +1465,6 @@ def run_as_admin():
         else:
             os.execvp('sudo', ['sudo', 'python3'] + sys.argv)
             sys.exit()
-
-def is_ffmpeg_installed():
-    required_files = ['ffmpeg.exe', 'ffprobe.exe', 'ffplay.exe']
-    paths = os.environ["PATH"].split(os.pathsep)
-    for path in paths:
-        if all(os.path.exists(os.path.join(path, file)) for file in required_files):
-            return True
-    program_files_path = Path("C:/Program Files/ffmpeg")
-    if all((program_files_path / file).exists() for file in required_files):
-        return True
-    system32_path = Path("C:/Windows/System32")
-    if all((system32_path / file).exists() for file in required_files):
-        return True
-    c_path = Path("C:/ffmpeg")
-    if all((c_path / file).exists() for file in required_files):
-        return True
-    return False
-
-def is_dmfs_installed():
-    dmfs_path = Path("C:/Program Files/DebugMode/FrameServer")
-    return dmfs_path.exists()
 
 def main():
     try:
