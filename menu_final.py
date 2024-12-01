@@ -22,6 +22,7 @@ import time
 import json
 import zipfile
 import shutil
+import tempfile
 
 console = Console()
 
@@ -1191,50 +1192,71 @@ class VideoProcessor:
             
     def set_preset(self):
         """Configure encoding preset settings with advanced options"""
-        self.clear_screen()
-        console.print("[cyan]Drag and drop your source video file here (or enter the path):[/cyan]")
-        file_path = input().strip()
-        
-        # Remove quotes if present (from drag and drop)
-        file_path = file_path.strip('"').strip("'")
-        
-        # Validate file exists
-        if not Path(file_path).is_file():
-            console.print("[red]Invalid file path or file does not exist[/red]")
-            input("\nPress Enter to continue...")
-            return
-        
-        # Store path in temp file
-        temp_dir = Path(os.getenv('TEMP'))
-        temp_file = temp_dir / '411_source_path.tmp'
-        temp_file.write_text(file_path)
-        
-        # Check for admin privileges after obtaining the file path
-        if not is_admin():
-            console.print("Launching with admin privileges...")
-            if platform.system() == "Windows":
-                script = os.path.abspath(sys.argv[0])
-                params = f'"{script}" 2'  # Use "2" for preset menu
-                ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, params, None, 1)
-            else:
-                subprocess.Popen(['sudo', 'python3'] + sys.argv + ["2"])
-            time.sleep(1)
-            return
-        
         try:
-            # We're running as admin, read the source path from temp file
-            input_file = Path(temp_file.read_text().strip())
-            temp_file.unlink()  # Clean up temp file
+            self.clear_screen()
             
-            # Continue with existing preset logic
-            probe = ffmpeg.probe(str(input_file))
-            video_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
-            audio_streams = [s for s in probe['streams'] if s['codec_type'] == 'audio']
+            # Get input source file first
+            questions = [
+                inquirer.Path('input_file',
+                    message='Select source video file',
+                    exists=True,
+                    path_type=inquirer.Path.FILE
+                ),
+                inquirer.Confirm('auto_crop',
+                    message='Enable automatic black bar detection?',
+                    default=True
+                )
+            ]
             
-            # ... existing code ...
-            
+            answers = inquirer.prompt(questions)
+            if not answers:
+                return
+
+            # Save answers to temp file
+            temp_file = Path(tempfile.gettempdir()) / "411_preset_temp.json"
+            with open(temp_file, 'w') as f:
+                json.dump(answers, f)
+
+            # Now elevate privileges and restart with temp file
+            if not is_admin():
+                console.print("Launching with admin privileges...")
+                if platform.system() == "Windows":
+                    script = os.path.abspath(sys.argv[0])
+                    params = f'"{script}" preset_continue'
+                    ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, params, None, 1)
+                else:
+                    subprocess.Popen(['sudo', 'python3'] + sys.argv + ["preset_continue"])
+                return
+
+            self._continue_preset_setup()
+
         except Exception as e:
-            console.print(f"[red]Error setting preset: {str(e)}[/red]")
+            console.print(f"[red]Error in preset setup: {str(e)}[/red]")
+            input("\nPress Enter to continue...")
+
+    def _continue_preset_setup(self):
+        """Continue preset setup with elevated privileges"""
+        try:
+            # Load saved answers
+            temp_file = Path(tempfile.gettempdir()) / "411_preset_temp.json"
+            if not temp_file.exists():
+                raise Exception("Temporary file not found")
+
+            with open(temp_file, 'r') as f:
+                answers = json.load(f)
+
+            # Delete temp file
+            temp_file.unlink()
+
+            # Continue with existing logic
+            probe = ffmpeg.probe(answers['input_file'])
+            # ... rest of your existing set_preset code ...
+
+        except Exception as e:
+            console.print(f"[red]Error continuing preset setup: {str(e)}[/red]")
+        finally:
+            if temp_file.exists():
+                temp_file.unlink()
             input("\nPress Enter to continue...")
 
     def edl_conform_menu(self):
