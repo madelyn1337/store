@@ -1209,7 +1209,7 @@ class VideoProcessor:
         temp_file = temp_dir / '411_source_path.tmp'
         temp_file.write_text(file_path)
         
-        # If not admin, relaunch with admin privileges
+        # Check for admin privileges after obtaining the file path
         if not is_admin():
             console.print("Launching with admin privileges...")
             if platform.system() == "Windows":
