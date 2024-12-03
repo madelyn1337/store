@@ -32,13 +32,7 @@ class VideoProcessor:
         self.supported_inputs = ['.mkv']
         self.supported_outputs = ['h265']
         self.base_dir = self.setup_directories()
-        self.encoding_presets = {
-            'H.265': {
-                'Fast': '-c:v libx265 -preset fast -crf 18 -x265-params profile=main10',
-                'Balanced': '-c:v libx265 -preset medium -crf 16 -x265-params profile=main10',
-                'High Quality': '-c:v libx265 -preset slow -crf 14 -x265-params profile=main10'
-            }
-        }
+
 
     def setup_directories(self):
         """Create required directory structure based on OS"""
@@ -913,8 +907,13 @@ class VideoProcessor:
             print("Please try running the script with administrator privileges")
 
     def open_website(self):
-        website_link = "https://scenepacks.com" 
-        os.system(f'start {website_link}')
+        website_link = "https://scenepacks.com"
+        if platform.system() == "Windows":
+            os.system(f'start {website_link}')
+        elif platform.system() == "Darwin":
+            os.system(f'open {website_link}')
+        else:
+            print(".")
 
     def check_installations(self):
         """Check installation status of components"""
