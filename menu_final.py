@@ -23,6 +23,7 @@ import json
 import zipfile
 import shutil
 import tempfile
+import threading
 
 console = Console()
 
@@ -92,10 +93,11 @@ class VideoProcessor:
                     choices=[
                         'Installers & Uninstallers',
                         'Convert MKV to MP4',
-                        'Set Preset',
+                        'EDL Export',
+                        'DMFS Encoding Settings',
                         'BluRay & WEB Info',
                         'Timeline Settings',
-                        'EDL Conform',
+                        'Open Website',
                         'Exit'
                     ],
                 )
@@ -116,7 +118,7 @@ class VideoProcessor:
                     continue
                 else:
                     self.installers_menu()
-            elif answer['choice'] == 'Set Preset':
+            elif answer['choice'] == 'DMFS Encoding Settings':
                 self.set_preset()
             elif answer['choice'] == 'Convert MKV to MP4':
                 self.video_conversion_menu()
@@ -126,8 +128,10 @@ class VideoProcessor:
                 self.bluray_search_menu()
             elif answer['choice'] == 'Timeline Settings':
                 self.timeline_calculator_menu()
-            elif answer['choice'] == 'EDL Conform':
+            elif answer['choice'] == 'EDL Export':
                 self.edl_conform_menu()
+            elif answer['choice'] == 'Open Website':
+                self.open_website()
             else:
                 console.print("Goodbye!", style="bold green")
                 sys.exit(0)
@@ -759,139 +763,6 @@ class VideoProcessor:
         except Exception as e:
             return {"Error": str(e)}
 
-    def proxy_creator_menu(self):
-        """Handle proxy creation workflow"""
-        while True:
-            self.clear_screen()
-            
-            # Ask for single or multiple files
-            mode_question = [
-                inquirer.List('mode',
-                    message='Select input mode:',
-                    choices=['Single File', 'Multiple Files', 'Back to Main Menu']
-                )
-            ]
-            mode_answer = inquirer.prompt(mode_question)
-            
-            if mode_answer['mode'] == 'Back to Main Menu':
-                return
-            
-            # Get input file(s)
-            if mode_answer['mode'] == 'Single File':
-                file_question = [
-                    inquirer.Path('input_files',
-                        message='Select input video file',
-                        exists=True,
-                        path_type=inquirer.Path.FILE
-                    )
-                ]
-                file_answer = inquirer.prompt(file_question)
-                input_files = [file_answer['input_files']]
-            else:
-                file_question = [
-                    inquirer.Path('input_dir',
-                        message='Select directory containing video files',
-                        exists=True,
-                        path_type=inquirer.Path.DIRECTORY
-                    )
-                ]
-                file_answer = inquirer.prompt(file_question)
-                input_files = list(Path(file_answer['input_dir']).glob('*.mp4')) + \
-                             list(Path(file_answer['input_dir']).glob('*.mov')) + \
-                             list(Path(file_answer['input_dir']).glob('*.mkv'))
-            
-            # Get codec preference
-            codec_question = [
-                inquirer.List('codec',
-                    message='Select proxy codec:',
-                    choices=['H.264', 'ProRes']
-                )
-            ]
-            codec_answer = inquirer.prompt(codec_question)
-            
-            # If ProRes, get specific format
-            prores_profile = None
-            if codec_answer['codec'] == 'ProRes':
-                prores_question = [
-                    inquirer.List('profile',
-                        message='Select ProRes profile:',
-                        choices=['Proxy', '422 HQ', '4444']
-                    )
-                ]
-                prores_answer = inquirer.prompt(prores_question)
-                prores_profile = prores_answer['profile']
-            
-            # Get resolution preference
-            res_question = [
-                inquirer.List('resolution',
-                    message='Select proxy resolution:',
-                    choices=['Same as source', 'Half resolution', 'Third resolution', 'Quarter resolution']
-                )
-            ]
-            res_answer = inquirer.prompt(res_question)
-            
-            # Process each file
-            for input_file in input_files:
-                try:
-                    # Generate output filename
-                    codec_suffix = '_h264_proxy' if codec_answer['codec'] == 'H.264' else f'_prores_{prores_profile.lower()}_proxy'
-                    output_file = self.base_dir / 'proxies' / f"{input_file.stem}{codec_suffix}{input_file.suffix}"
-                    
-                    # Get source dimensions
-                    probe = ffmpeg.probe(str(input_file))
-                    video_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
-                    width = int(video_stream['width'])
-                    height = int(video_stream['height'])
-                    
-                    # Calculate new dimensions
-                    if res_answer['resolution'] == 'Half resolution':
-                        width //= 2
-                        height //= 2
-                    elif res_answer['resolution'] == 'Third resolution':
-                        width //= 3
-                        height //= 3
-                    elif res_answer['resolution'] == 'Quarter resolution':
-                        width //= 4
-                        height //= 4
-                    
-                    # Build FFmpeg command
-                    cmd = [
-                        '-i', str(input_file),
-                        '-vf', f'scale={width}:{height}'
-                    ]
-                    
-                    if codec_answer['codec'] == 'H.264':
-                        cmd.extend([
-                            '-c:v', 'libx264',
-                            '-preset', 'veryfast',
-                            '-crf', '23'
-                        ])
-                    else:
-                        prores_profiles = {'Proxy': '0', '422 HQ': '3', '4444': '4'}
-                        cmd.extend([
-                            '-c:v', 'prores_ks',
-                            '-profile:v', prores_profiles[prores_profile]
-                        ])
-                    
-                    # Add audio settings and output file
-                    cmd.extend([
-                        '-c:a', 'aac',
-                        '-b:a', '128k',
-                        str(output_file)
-                    ])
-                    
-                    # Run FFmpeg with progress bar
-                    console.print(f"\nProcessing: {input_file.name}")
-                    ffpb.main(argv=cmd)
-                    
-                except Exception as e:
-                    console.print(f"[red]Error processing {input_file.name}: {str(e)}[/red]")
-            
-            console.print("\n[green]Proxy creation completed![/green]")
-            input("\nPress Enter to continue...")
-            self.clear_screen()
-            return
-
     def add_to_path(self, new_path):
         """Add directory to system PATH"""
         import winreg
@@ -1294,7 +1165,7 @@ class VideoProcessor:
                 
                 # Add HDR to SDR conversion if needed
                 if is_hdr:
-                    ffmpeg_base += '-vf "zscale=t=linear:npl=100,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv" '
+                    ffmpeg_base += '-vf "zscale=t=linear:npl=100,tonemap=tonemap=mobius,zscale=t=bt709:m=bt709:r=tv" '
                 
                 # Add audio processing for 5.1 to stereo conversion
                 if surround_track:
@@ -1335,7 +1206,7 @@ class VideoProcessor:
 
 
     def edl_conform_menu(self):
-        """Convert Premiere EDL to FFmpeg commands"""
+        """Convert Premiere EDL to FFmpeg commands for segment extraction"""
         while True:
             self.clear_screen()
             
@@ -1345,62 +1216,38 @@ class VideoProcessor:
             
             # Get input EDL file
             file_question = [
-                inquirer.Path('edl_file',
+                inquirer.Path(
+                    'edl_file',
                     message='Enter path to EDL file',
                     exists=True,
-                    path_type=inquirer.Path.FILE
+                    path_type=inquirer.Path.FILE,
                 )
             ]
             
             file_answer = inquirer.prompt(file_question)
-            if not file_answer:  # Handle cancel/back
+            if not file_answer:
                 return
             
-            # Ask for source type
-            source_type_question = [
-                inquirer.List('source_type',
-                    message='Select source type:',
-                    choices=['Single File', 'Source Folder']
+            # Get source video file
+            source_question = [
+                inquirer.Path(
+                    'source_file',
+                    message='Select source video file',
+                    exists=True,
+                    path_type=inquirer.Path.FILE,
                 )
             ]
-            
-            source_type_answer = inquirer.prompt(source_type_question)
-            if not source_type_answer:
+            source_answer = inquirer.prompt(source_question)
+            if not source_answer:
                 return
-            
-            # Get source based on type selected
-            if source_type_answer['source_type'] == 'Single File':
-                source_question = [
-                    inquirer.Path('source_path',
-                        message='Select source video file',
-                        exists=True,
-                        path_type=inquirer.Path.FILE
-                    )
-                ]
-                source_answer = inquirer.prompt(source_question)
-                if not source_answer:
-                    return
-                source_path = Path(source_answer['source_path']).parent
-                single_source_file = Path(source_answer['source_path'])
-            else:
-                source_question = [
-                    inquirer.Path('source_path',
-                        message='Enter path to source media directory',
-                        exists=True,
-                        path_type=inquirer.Path.DIRECTORY
-                    )
-                ]
-                source_answer = inquirer.prompt(source_question)
-                if not source_answer:
-                    return
-                source_path = Path(source_answer['source_path'])
-                single_source_file = None
+            source_file = Path(source_answer['source_file']).resolve()
             
             # Get output name
             name_question = [
-                inquirer.Text('output_name',
-                    message='Enter output filename (without extension)',
-                    validate=lambda _, x: bool(x.strip())
+                inquirer.Text(
+                    'output_name',
+                    message='Enter final output filename (without extension)',
+                    validate=lambda _, x: bool(x.strip()),
                 )
             ]
             
@@ -1409,127 +1256,213 @@ class VideoProcessor:
                 return
             
             try:
+                # Analyze source frame rate and get GOP size
+                probe = ffmpeg.probe(str(source_file))
+                video_stream = next(
+                    (stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None
+                )
+                
+                if not video_stream:
+                    raise ValueError("No video stream found in source file.")
+                    
+                # Get exact frame rate
+                if 'r_frame_rate' in video_stream:  # Use real frame rate instead of average
+                    num, den = map(int, video_stream['r_frame_rate'].split('/'))
+                    frame_rate = num / den if den != 0 else None
+                else:
+                    num, den = map(int, video_stream['avg_frame_rate'].split('/'))
+                    frame_rate = num / den if den != 0 else None
+
+                if not frame_rate:
+                    raise ValueError("Unable to detect frame rate from the source video file.")
+
+                console.print(f"[cyan]Detected source frame rate: {frame_rate:.3f} fps[/cyan]")
+
                 # Parse EDL file
                 console.print("\n[cyan]Parsing EDL file...[/cyan]")
                 segments = []
-                current_source = None
-                
+
+                def is_valid_timecode(tc):
+                    """Validate timecode format"""
+                    parts = tc.split(':')
+                    return len(parts) == 4 and all(part.isdigit() for part in parts)
+
                 with open(file_answer['edl_file'], 'r', encoding='utf-8') as f:
                     lines = f.readlines()
-                    
-                    for i, line in enumerate(lines):
+
+                    for line in lines:
                         line = line.strip()
-                        
-                        if not line or line.startswith('TITLE:') or line.startswith('FCM:'):
+                        if not line or line.startswith('*') or 'AUDIO' in line:
                             continue
-                        
+
                         if line[0].isdigit():
                             parts = line.split()
-                            for next_line in lines[i+1:i+4]:
-                                if 'FROM CLIP NAME:' in next_line:
-                                    current_source = next_line.split('FROM CLIP NAME:')[1].strip()
-                                    break
-                            
-                            if current_source and len(parts) >= 8:
-                                try:
-                                    src_start = self.timecode_to_seconds(parts[4])
-                                    src_end = self.timecode_to_seconds(parts[5])
-                                    
-                                    source_file = None
-                                    if single_source_file:
-                                        # If single file selected, use it for all segments
-                                        source_file = single_source_file
-                                    else:
-                                        # Search in directory
-                                        potential_file = source_path / current_source
-                                        if potential_file.exists():
-                                            source_file = potential_file
-                                        else:
-                                            for ext in ['', '.mp4', '.mov', '.mxf', '.mkv']:
-                                                search_name = current_source.replace(ext, '')
-                                                potential_files = list(source_path.rglob(f"{search_name}*"))
-                                                if potential_files:
-                                                    source_file = potential_files[0]
-                                                    break
-                                
-                                    if source_file:
-                                        segments.append({
-                                            'file': str(source_file),
-                                            'start': src_start,
-                                            'end': src_end
-                                        })
-                                        console.print(f"[green]✓[/green] Found source for {current_source}")
-                                    else:
-                                        console.print(f"[yellow]⚠[/yellow] Could not find source for {current_source}")
-                                
-                                except Exception as e:
-                                    console.print(f"[yellow]Warning: Could not parse line: {line}[/yellow]")
-                                    console.print(f"[dim]Error: {str(e)}[/dim]")
-                
+                            if len(parts) >= 7:
+                                source_in_tc = parts[4]
+                                source_out_tc = parts[5]
+
+                                if is_valid_timecode(source_in_tc) and is_valid_timecode(source_out_tc):
+                                    source_in = self.timecode_to_seconds(source_in_tc, frame_rate)
+                                    source_out = self.timecode_to_seconds(source_out_tc, frame_rate)
+
+                                    if source_in is not None and source_out is not None:
+                                        segments.append({'in': source_in, 'out': source_out})
+                                        console.print(
+                                            f"[dim]Found segment: {source_in_tc} to {source_out_tc}[/dim]"
+                                        )
+                                else:
+                                    console.print(f"[yellow]Invalid timecodes in line: {line}[/yellow]")
+
                 if not segments:
-                    console.print("[red]No valid segments found in EDL[/red]")
-                    input("\nPress Enter to continue...")
-                    return
-                
-                # Generate concat file in EDL Export directory
+                    raise Exception("No valid segments found in EDL file")
+
+                console.print(f"\n[cyan]Found {len(segments)} valid segments[/cyan]")
+
+                # Extract each segment using FFmpeg with improved accuracy
+                for i, segment in enumerate(segments):
+                    output_segment = edl_export_dir / f"temp_segment_{i:03d}.mp4"
+                    
+                    # Calculate frame-accurate timestamps
+                    start_frame = int(segment['in'] * frame_rate)
+                    end_frame = int(segment['out'] * frame_rate)
+                    
+                    # Convert back to seconds for precise cutting
+                    start_time = start_frame / frame_rate
+                    duration = (end_frame - start_frame) / frame_rate
+                    
+                    cmd = [
+                        'ffmpeg',
+                        '-hide_banner',
+                        '-ss', f"{start_time:.6f}",  # Increased precision
+                        '-i', str(source_file),
+                        '-map', '0',  # Copy all streams
+                        '-avoid_negative_ts', '1',
+                        '-async', '1',  # Audio sync
+                        '-strict', '-2',
+                        '-t', f"{duration:.6f}",
+                        '-c', 'copy',  # Use stream copy for speed
+                        str(output_segment)
+                    ]
+
+                    console.print(
+                        f"Processing segment {i+1}/{len(segments)}: "
+                        f"Frame {start_frame} to {end_frame} "
+                        f"(Duration: {duration:.3f}s)"
+                    )
+                    
+                    result = subprocess.run(cmd, capture_output=True, text=True)
+                    if result.returncode != 0:
+                        console.print(
+                            f"[red]Error processing segment {i+1}: {result.stderr}[/red]"
+                        )
+
+                console.print(f"\n[green]Successfully processed {len(segments)} segments[/green]")
+
+                # After all segments are processed, create concat file
                 concat_file = edl_export_dir / 'concat.txt'
-                output_file = edl_export_dir / f"{name_answer['output_name']}.mp4"
-                
-                console.print("\n[cyan]Creating concat file...[/cyan]")
                 with open(concat_file, 'w', encoding='utf-8') as f:
-                    for segment in segments:
-                        abs_path = str(Path(segment['file']).resolve()).replace("'", "'\\''")
-                        f.write(f"file '{abs_path}'\n")
-                        f.write(f"inpoint {segment['start']}\n")
-                        f.write(f"outpoint {segment['end']}\n")
+                    for i in range(len(segments)):
+                        segment_path = edl_export_dir / f"temp_segment_{i:03d}.mp4"
+                        f.write(f"file '{segment_path.name}'\n")
+
+                # Create final output file
+                final_output = edl_export_dir / f"{name_answer['output_name']}.mp4"
                 
-                # Build FFmpeg command
-                console.print("\n[cyan]Executing FFmpeg command...[/cyan]")
-                cmd = [
+                console.print("\n[cyan]Combining segments into final video...[/cyan]")
+                
+                mux_cmd = [
+                    'ffmpeg',
                     '-f', 'concat',
                     '-safe', '0',
                     '-i', str(concat_file),
-                    '-c:v', 'copy',
-                    '-c:a', 'copy',
-                    str(output_file)
+                    '-c', 'copy',
+                    str(final_output)
                 ]
                 
+                result = subprocess.run(mux_cmd, capture_output=True, text=True)
+                if result.returncode != 0:
+                    raise Exception(f"Error during final mux: {result.stderr}")
+
+                # Clean up intermediate files
+                console.print("\n[cyan]Cleaning up temporary files...[/cyan]")
+                for i in range(len(segments)):
+                    segment_path = edl_export_dir / f"temp_segment_{i:03d}.mp4"
+                    try:
+                        segment_path.unlink()
+                    except Exception as e:
+                        console.print(f"[yellow]Warning: Could not delete {segment_path.name}: {e}[/yellow]")
+                
+                # Delete concat file
                 try:
-                    ffpb.main(argv=cmd)
-                except Exception as e:
-                    console.print(f"[red]FFmpeg Error: {str(e)}[/red]")
-                    console.print("\n[yellow]Trying alternative method...[/yellow]")
-                    
-                    import subprocess
-                    ffmpeg_cmd = ['ffmpeg'] + cmd
-                    result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
-                    if result.returncode != 0:
-                        raise Exception(f"FFmpeg error: {result.stderr}")
-                
-                # Delete concat file after successful conversion
-                if concat_file.exists():
                     concat_file.unlink()
-                
-                if output_file.exists() and output_file.stat().st_size > 0:
-                    console.print(f"\n[green]Successfully created: {output_file}[/green]")
-                else:
-                    raise Exception("Output file was not created or is empty")
-                
+                except Exception as e:
+                    console.print(f"[yellow]Warning: Could not delete concat file: {e}[/yellow]")
+
+                console.print(f"\n[green]Successfully created final video: {final_output.name}[/green]")
+                console.print(f"[dim]Location: {final_output}[/dim]")
+
             except Exception as e:
                 console.print(f"[red]Error: {str(e)}[/red]")
-                # Clean up concat file even if there was an error
-                if 'concat_file' in locals() and concat_file.exists():
-                    concat_file.unlink()
-            
-            input("\nPress Enter to continue...")
 
-    def timecode_to_seconds(self, timecode):
-        """Convert timecode (HH:MM:SS:FF) to seconds"""
+            input("\nPress Enter to continue...")
+            self.clear_screen()
+            return
+
+    def timecode_to_seconds(self, timecode, frame_rate):
+        """Convert timecode (HH:MM:SS:FF) to seconds with source-aware frame rate"""
         try:
             hours, minutes, seconds, frames = map(int, timecode.split(':'))
-            return hours * 3600 + minutes * 60 + seconds + frames / 23.976
-        except:
+            total_seconds = (hours * 3600) + (minutes * 60) + seconds + (frames / frame_rate)
+            return round(total_seconds, 6)  # Higher precision for accurate cuts
+        except Exception as e:
+            console.print(f"[yellow]Warning: Timecode conversion error: {str(e)}[/yellow]")
             return 0
+
+    def watch_for_new_files(self):
+        """Watch scenepacks and EDL Export directories for new files and create proxies."""
+        scenepacks_dir = self.base_dir / 'scenepacks'
+        edl_export_dir = self.base_dir / 'EDL Export'
+        watched_dirs = [scenepacks_dir, edl_export_dir]
+
+        while True:
+            for directory in watched_dirs:
+                for file in directory.iterdir():
+                    if file.is_file() and self.is_file_ready(file):
+                        self.create_h264_proxy(file)
+            time.sleep(5)  # Check every 5 seconds
+
+    def is_file_ready(self, file_path):
+        """Check if file size hasn't changed for 5 seconds."""
+        initial_size = file_path.stat().st_size
+        time.sleep(5)
+        return initial_size == file_path.stat().st_size
+
+    def create_h264_proxy(self, input_file):
+        """Create a H.264 proxy with YouTube-like quality."""
+        try:
+            output_file = self.base_dir / 'proxies' / f"{input_file.stem}_proxy.mp4"
+            cmd = [
+                'ffpb',
+                '-i', str(input_file),
+                '-c:v', 'libx264',
+                '-preset', 'fast',
+                '-crf', '23',  # Adjust CRF for YouTube-like quality
+                '-c:a', 'aac',
+                '-b:a', '128k',
+                '-threads', str(psutil.cpu_count(logical=True) - 1),  # Use all available CPU threads
+                str(output_file)
+            ]
+            # Run FFmpeg command silently
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception as e:
+            # Optionally log the error to a file instead of printing
+            with open('error_log.txt', 'a') as log_file:
+                log_file.write(f"Error creating proxy for {input_file.name}: {str(e)}\n")
+
+    def start_watching(self):
+        """Start watching directories in a separate thread."""
+        watcher_thread = threading.Thread(target=self.watch_for_new_files, daemon=True)
+        watcher_thread.start()
 
 def is_admin():
     """Check if the script is running with admin privileges"""
@@ -1576,6 +1509,7 @@ def main():
 
         # Normal menu flow
         processor = VideoProcessor()
+        processor.start_watching()  # Start watching for new files
         processor.display_main_menu()
     except KeyboardInterrupt:
         print("\n")  # Add a newline for cleaner exit
