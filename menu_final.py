@@ -489,9 +489,13 @@ class VideoProcessor:
             
             # HDR to SDR conversion filters
             filters.extend([
-                'zscale=t=linear:npl=100',
-                'tonemap=tonemap=hable:desat=0',
-                'zscale=t=bt709:m=bt709:r=tv'
+                'zscale=t=linear:npl=203',
+                'format=gbrpf32le',
+                'tonemap=tonemap=reinhard:desat=0',
+                'zscale=p=709:t=709:m=709:r=limited',
+                'dither=error_diffusion',
+                'format=yuv420p',
+                'sidedata=delete'
             ])
             
             # Add crop filter if needed
@@ -1265,7 +1269,7 @@ class VideoProcessor:
                     raise ValueError("No video stream found in source file.")
                     
                 # Get exact frame rate
-                if 'r_frame_rate' in video_stream:  # Use real frame rate instead of average
+                if 'r_frame_rate' in video_stream:  
                     num, den = map(int, video_stream['r_frame_rate'].split('/'))
                     frame_rate = num / den if den != 0 else None
                 else:
