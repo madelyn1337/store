@@ -22,8 +22,9 @@ import time
 import json
 import zipfile
 import shutil
-import tempfile
 import threading
+import queue
+import readline
 
 console = Console()
 
@@ -33,6 +34,12 @@ class VideoProcessor:
         self.supported_outputs = ['h265']
         self.base_dir = self.setup_directories()
 
+    def strip_quotes(self, path: str) -> str:
+        """Clean up file paths from drag & drop operations"""
+        # Handle both Windows and Unix paths
+        path = path.strip('"').strip("'")
+        # Convert potential Windows backslashes to forward slashes
+        return path.replace('\\', '/')
 
     def setup_directories(self):
         """Create required directory structure based on OS"""
@@ -68,36 +75,61 @@ class VideoProcessor:
         while True:
             self.clear_screen()
             
-            # Add usage bar display
+            # Add usage bar display with enhanced styling
             self.generate_usage_bars()
             
-            # Add spacing
-            console.print("\n\n")
+            # Add spacing and decorative elements
+            console.print("\n[bright_black]═══════════════════════════════════════════════[/bright_black]")
             
-            # Display welcome message
+            # Display welcome message with enhanced styling
             console.print(Panel.fit(
                 "[bold blue]Welcome to 411's ScenePack Tool[/bold blue]\n"
-                "    The Best in the Market",
-                title="411 tool 🎀",
+                "[cyan]Advanced Video Processing Suite[/cyan]\n"
+                "         [dim]Version 1.0[/dim]",
+                title="[bold white]411[bold blue]mpeg[/bold blue][/bold white]",
+                border_style="blue",
+                padding=(1, 2),
+                subtitle="[dim]Creator Edition[/dim]"
             ))
+            
+            console.print("[bright_black]═══════════════════════════════════════════════[/bright_black]\n")
+            
+            # Enhanced menu options with icons and categories
+            console.print("[bold white]┌─ Processing Tools[/bold white]")
+            
+            # Modify choices based on OS
+            menu_choices = [
+                'Installers & Uninstallers',
+                'Encode Source',
+                'EDL Export',
+                'BluRay & WEB Info',
+                'Timeline Settings',
+                'Open Website',
+                'Upgrade License',
+                'Exit'
+            ]
+
+            # Add DMFS option only for Windows
+            if platform.system() == "Windows":
+                menu_choices.insert(3, 'DMFS Encoding Settings')
+            else:
+                # Add disabled DMFS option for non-Windows
+                menu_choices.insert(3, 'DMFS Encoding Settings (Windows Only)')
             
             questions = [
                 inquirer.List('choice',
                     message='What would you like to do?',
-                    choices=[
-                        'Installers & Uninstallers',
-                        'Convert MKV to MP4',
-                        'EDL Export',
-                        'DMFS Encoding Settings',
-                        'BluRay & WEB Info',
-                        'Timeline Settings',
-                        'Open Website',
-                        'Exit'
-                    ],
+                    choices=menu_choices,
                 )
             ]
             
             answer = inquirer.prompt(questions)
+            
+            # Skip DMFS on non-Windows
+            if answer['choice'] == '[dim]DMFS Encoding Settings (Windows Only)[/dim]':
+                console.print("[yellow]DMFS Encoding is only available on Windows systems.[/yellow]")
+                time.sleep(2)
+                continue
             
             if answer['choice'] == 'Installers & Uninstallers':
                 if not is_admin():
@@ -114,7 +146,7 @@ class VideoProcessor:
                     self.installers_menu()
             elif answer['choice'] == 'DMFS Encoding Settings':
                 self.set_preset()
-            elif answer['choice'] == 'Convert MKV to MP4':
+            elif answer['choice'] == 'Encode Source':
                 self.video_conversion_menu()
             elif answer['choice'] == 'Create Proxies':
                 self.proxy_creator_menu()
@@ -126,6 +158,8 @@ class VideoProcessor:
                 self.edl_conform_menu()
             elif answer['choice'] == 'Open Website':
                 self.open_website()
+            elif answer['choice'] == 'Upgrade License':
+                self.upgrade_license()
             else:
                 console.print("Goodbye!", style="bold green")
                 sys.exit(0)
@@ -161,139 +195,299 @@ class VideoProcessor:
         console.print(f"CPU% -= {cpu_bar} =- [bold {percentage_color}]{cpu_usage:.2f}%[/bold {percentage_color}]")
         
         # Add disk usage bars
-        if platform.system() == "Darwin":
-            partitions = [psutil.disk_partitions()[0]]
-        else:
-            partitions = psutil.disk_partitions()
-        
-        for partition in partitions:
+        if platform.system() == "Darwin":  # macOS specific handling
             try:
-                disk = psutil.disk_usage(partition.mountpoint)
-                disk_usage = disk.percent
-                disk_bar_color = default_bar_color if disk_usage <= 90 else high_usage_color
-                disk_filled = f"[{disk_bar_color}]/[/{disk_bar_color}]" * int(bar_length * disk_usage // 100)
-                disk_empty = "[white]/[/white]" * (bar_length - int(bar_length * disk_usage // 100))
-                disk_bar = f"[ {disk_filled}{disk_empty} ]"
-                console.print(
-                    f"{partition.device}% -= {disk_bar} =- [bold {percentage_color}]{disk_usage:.2f}%[/bold {percentage_color}]"
-                )
-            except PermissionError:
-                console.print(f"Drive {partition.device} - [bold red]Access Denied[/bold red]")
+                # Get all mounted volumes
+                partitions = psutil.disk_partitions(all=True)
+                # Find the main system volume (usually the largest one)
+                system_volume = None
+                max_size = 0
+                
+                for partition in partitions:
+                    try:
+                        if partition.mountpoint == '/System/Volumes/Data':
+                            system_volume = partition
+                            break
+                        usage = psutil.disk_usage(partition.mountpoint)
+                        if usage.total > max_size:
+                            max_size = usage.total
+                            system_volume = partition
+                    except (PermissionError, OSError):
+                        continue
+                
+                if system_volume:
+                    disk = psutil.disk_usage(system_volume.mountpoint)
+                    disk_usage = disk.percent
+                    disk_bar_color = default_bar_color if disk_usage <= 90 else high_usage_color
+                    disk_filled = f"[{disk_bar_color}]/[/{disk_bar_color}]" * int(bar_length * disk_usage // 100)
+                    disk_empty = "[white]/[/white]" * (bar_length - int(bar_length * disk_usage // 100))
+                    disk_bar = f"[ {disk_filled}{disk_empty} ]"
+                    console.print(
+                        f"Macintosh HD% -= {disk_bar} =- [bold {percentage_color}]{disk_usage:.2f}%[/bold {percentage_color}]"
+                    )
+            except Exception as e:
+                console.print(f"Macintosh HD - [bold red]Error: {str(e)}[/bold red]")
+        else:  # Windows and other OS handling
+            partitions = psutil.disk_partitions()
+            for partition in partitions:
+                try:
+                    disk = psutil.disk_usage(partition.mountpoint)
+                    disk_usage = disk.percent
+                    disk_bar_color = default_bar_color if disk_usage <= 90 else high_usage_color
+                    disk_filled = f"[{disk_bar_color}]/[/{disk_bar_color}]" * int(bar_length * disk_usage // 100)
+                    disk_empty = "[white]/[/white]" * (bar_length - int(bar_length * disk_usage // 100))
+                    disk_bar = f"[ {disk_filled}{disk_empty} ]"
+                    console.print(
+                        f"{partition.device}% -= {disk_bar} =- [bold {percentage_color}]{disk_usage:.2f}%[/bold {percentage_color}]"
+                    )
+                except PermissionError:
+                    console.print(f"Drive {partition.device} - [bold red]Access Denied[/bold red]")
+
+    def upgrade_license(self):
+        self.clear_screen()
+        if platform.system() == "Windows":
+            os.system("start https://discord.gg/411")
+        else:
+            os.system("open https://discord.gg/411")
 
     def video_conversion_menu(self):
         while True:
             self.clear_screen()
             
-            # Get input file first
             file_question = [
-                inquirer.Path('input_file',
-                    message='Enter path to input video file',
-                    exists=True,
-                    path_type=inquirer.Path.FILE
+                inquirer.Text(
+                    'input_file',
+                    message='Drag & drop input video file (or enter path)',
+                    validate=lambda _, x: Path(self.strip_quotes(x)).exists()
                 )
             ]
+            
             file_answer = inquirer.prompt(file_question)
             if not file_answer:  # Handle cancel/back
                 return
             
-            input_file = file_answer['input_file']
+            input_file = Path(self.strip_quotes(file_answer['input_file']))
             
-            # Analyze source video
-            probe = ffmpeg.probe(input_file)
-            video_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
-            codec_name = video_stream.get('codec_name', '').lower()
-            is_hdr = self.detect_hdr(input_file)
-            
-            self.clear_screen()
-            if codec_name == 'hevc':
-                # For H.265 source, offer fast copy or re-encode options
-                questions = [
-                    inquirer.List('choice',
-                        message='Source is H.265. Select operation:',
-                        choices=[
-                            'Fast Copy (No Quality Loss)',
-                            'Re-encode (For cropping/HDR conversion)',
-                            'Back to Main Menu'
-                        ],
-                        carousel=True
+            # Ask about EDL vs DMFS
+            workflow_question = [
+                inquirer.List('workflow',
+                    message='Are you using EDL Export (Movies) or DMFS Encoding (TV Shows)?',
+                    choices=['EDL Export', 'DMFS Encoding'],
+                )
+            ]
+            workflow_answer = inquirer.prompt(workflow_question)
+            if not workflow_answer:
+                return
+
+            # DMFS path - simple copy
+            if workflow_answer['workflow'] == 'DMFS Encoding':
+                name_question = [
+                    inquirer.Text('output_name',
+                        message='Enter output name (without extension)',
+                        validate=lambda _, x: Path(self.strip_quotes(x)).exists()
                     )
                 ]
-                answer = inquirer.prompt(questions)
-                if not answer or answer['choice'] == 'Back to Main Menu':
+                name_answer = inquirer.prompt(name_question)
+                if not name_answer:
                     return
+                    
+                output_file = self.base_dir / 'media' / f"{name_answer['output_name']}.mp4"
                 
-                if answer['choice'] == 'Fast Copy (No Quality Loss)':
-                    self.quick_copy_video(input_file)
-                    continue
+                cmd = [
+                    'ffmpeg',
+                    '-i', str(input_file),
+                    '-c', 'copy',
+                    str(output_file)
+                ]
+                
+                ffpb.main(argv=cmd[1:])  # Skip 'ffmpeg' in argv
+                return
+
+            # EDL path - full encode
+            # Analyze source video
+            try:
+                probe = ffmpeg.probe(input_file)
+                video_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
+                audio_streams = [stream for stream in probe['streams'] if stream['codec_type'] == 'audio']
+                
+                if not video_stream:
+                    console.print("[red]No video stream found in input file[/red]")
+                    return
+            except Exception as e:
+                console.print(f"[red]Error analyzing input file: {str(e)}[/red]")
+                return
+
+            # Get CPU info
+            cpu_cores = psutil.cpu_count(logical=False)
+            cpu_threads = psutil.cpu_count()
             
-            # For non-H.265 source or if re-encode was chosen
+            # Determine encoding settings based on CPU
+            preset = 'slow' if cpu_cores > 20 else 'medium'
+            crf = 18 if cpu_cores > 20 else 20
+            
+            # Build x265 params based on CPU capability
+            x265_params = [
+                'profile=main10',
+                f'pools={cpu_threads}',
+                'frame-threads=4',
+                'aq-mode=3',
+                'psy-rd=1.0',
+                'psy-rdoq=1.0',
+                'rdoq-level=2',
+                'no-sao=1'
+            ]
+            
+            if cpu_cores > 20:
+                x265_params.extend([
+                    'rc-lookahead=60',
+                    'ref=5',
+                    'me=3',
+                    'subme=5',
+                    'b-adapt=2'
+                ])
+            else:
+                x265_params.extend([
+                    'rc-lookahead=40',
+                    'ref=4',
+                    'me=2',
+                    'subme=4',
+                    'b-adapt=1'
+                ])
+
             questions = [
                 inquirer.Confirm('auto_crop',
                     message='Enable automatic black bar detection?',
+                    default=True
+                ),
+                inquirer.Confirm('tonemap',
+                    message='Enable HDR to SDR conversion?',
                     default=False
                 )
             ]
             
-            # Only ask about HDR conversion if source is HDR
-            if is_hdr:
-                questions.append(
-                    inquirer.Confirm('convert_sdr',
-                        message='Convert HDR to SDR?',
-                        default=True
-                    )
-                )
-            
             answers = inquirer.prompt(questions)
-            if not answers:  # Handle cancel/back
-                continue
+            if not answers:
+                return
             
-            answers['input_file'] = input_file
-            answers['output_format'] = 'H.265'
-            if not is_hdr:
-                answers['convert_sdr'] = False
-            
-            self.process_video(answers)
-
-    def quick_copy_video(self, input_file):
-        """Quickly copy video stream without conversion"""
-        try:
-            input_path = Path(input_file)
-            self.clear_screen()
-            
-            questions = [
+            # Get output name
+            name_question = [
                 inquirer.Text('output_name',
-                    message='Enter output name (press Enter to use input name)',
-                    default='',
+                    message='Enter output name (without extension)',
+                    # Remove the validate parameter since we don't need to validate if the path exists
                 )
             ]
             
-            answer = inquirer.prompt(questions)
-            self.clear_screen()
+            name_answer = inquirer.prompt(name_question)
+            if not name_answer:
+                return
             
-            # Update output path to use media directory
-            if answer['output_name'].strip():
-                output_file = self.base_dir / 'media' / f"{answer['output_name']}.mp4"
+            output_file = self.base_dir / 'media' / f"{name_answer['output_name']}.mp4"
+            
+            # Check for HDR
+            is_hdr = ('color_transfer' in video_stream and 'smpte2084' in video_stream['color_transfer'].lower()) or \
+                     ('color_primaries' in video_stream and 'bt2020' in video_stream['color_primaries'].lower())
+            if is_hdr:
+                console.print("[yellow]HDR content detected[/yellow]")
+            
+            # Build FFmpeg command
+            cmd = ['ffmpeg', '-i', str(input_file)]
+            
+            # Add crop if requested
+            if answers['auto_crop']:
+                crop_values = self.detect_black_bars(input_file)
+                if crop_values:
+                    w, h, x, y = crop_values
+                    cmd.extend(['-vf', f'crop={w}:{h}:{x}:{y}'])
+            
+            # Add tonemapping if requested
+            if answers['tonemap']:
+                tonemap_filter = 'zscale=t=linear:npl=203,format=gbrpf32le,tonemap=reinhard:desat=0,zscale=p=709:t=709:m=709:r=limited:dither=error_diffusion,format=yuv420p,sidedata=delete'
+                if 'crop' in cmd:
+                    crop_idx = cmd.index('-vf') + 1
+                    cmd[crop_idx] = f"{cmd[crop_idx]},{tonemap_filter}"
+                else:
+                    cmd.extend(['-vf', tonemap_filter])
+            
+            # Check for 5.1 audio and add center channel extraction
+            surround_track = next((
+                stream for stream in audio_streams 
+                if stream.get('channels', 0) == 6
+            ), None)
+            
+            if surround_track:
+                cmd.extend(['-af', 'pan=stereo|c0=FC|c1=FC', '-c:a', 'aac', '-b:a', '576k'])
             else:
-                output_file = self.base_dir / 'media' / f"{input_path.stem}.mp4"
-
-            cmd = [
-                '-i', str(input_file),
-                '-c', 'copy',
+                cmd.extend(['-c:a', 'aac', '-b:a', '576k'])
+            
+            # Add video encoding parameters
+            cmd.extend([
+                '-c:v', 'libx265',
+                '-preset', preset,
+                '-crf', str(crf),
+                '-x265-params', ':'.join(x265_params),
+                '-threads', str(cpu_threads),
                 str(output_file)
-            ]
+            ])
+            
+            # Now start the encoding with usage monitoring
+            try:
+                self.clear_screen()  # Clear screen once before starting
+                # Add some initial spacing for the progress bar
+                print("\n")
+                console.print("[yellow]Encoding...[/yellow]")
+                print("\n")
+                
+                # Create a thread to update usage bars
+                stop_thread = threading.Event()
+                usage_queue = queue.Queue()
 
-            ffpb.main(argv=cmd)
-            
-            self.clear_screen()
-            console.print("[green]Video copy completed successfully![/green]")
+                def update_usage():
+                    while not stop_thread.is_set():
+                        try:
+                            # Save cursor position
+                            print("\033[s", end="", flush=True)
+                            
+                            # Move to top
+                            print("\033[H", end="", flush=True)
+                            
+                            # Display usage bars
+                            self.generate_usage_bars()
+                            
+                            # Restore cursor position
+                            print("\033[u", end="", flush=True)
+                            
+                            time.sleep(1)
+                        except Exception as e:
+                            usage_queue.put(e)
+                            break
+
+                # Start usage monitoring thread
+                usage_thread = threading.Thread(target=update_usage)
+                usage_thread.start()
+
+                # Run ffpb command
+                try:
+                    ffpb.main(argv=cmd[1:])  # Skip 'ffmpeg' in argv
+                finally:
+                    # Stop usage monitoring thread
+                    stop_thread.set()
+                    usage_thread.join()
+
+                    # Check for any errors from the usage thread
+                    try:
+                        error = usage_queue.get_nowait()
+                        raise error
+                    except queue.Empty:
+                        pass
+
+                console.print("[green]Encode completed successfully![/green]")
+
+            except Exception as e:
+                console.print(f"[red]Error during encoding: {str(e)}[/red]")
+
             input("\nPress Enter to continue...")
             self.clear_screen()
-            
-        except Exception as e:
-            self.clear_screen()
-            console.print(f"[red]Error copying video: {str(e)}[/red]")
-            input("\nPress Enter to continue...")
-            self.clear_screen()
+            return
 
     def bluray_search_menu(self):
         while True:
@@ -312,10 +506,10 @@ class VideoProcessor:
         while True:
             self.clear_screen()
             questions = [
-                inquirer.Path('input_file',
-                    message='Enter path to video file for analysis',
-                    exists=True,
-                    path_type=inquirer.Path.FILE
+                inquirer.Text(
+                    'input_file',
+                    message='Drag & drop video file for analysis (or enter path)',
+                    validate=lambda _, x: Path(self.strip_quotes(x)).exists()
                 ),
                 inquirer.Confirm('auto_detect',
                     message='Auto-detect dimensions?',
@@ -324,7 +518,11 @@ class VideoProcessor:
             ]
             
             answer = inquirer.prompt(questions)
-
+            if not answer:
+                return
+            
+            # Clean up input path
+            answer['input_file'] = str(Path(self.strip_quotes(answer['input_file'])).resolve())
             
             if not answer['auto_detect']:
                 manual_questions = [
@@ -482,49 +680,6 @@ class VideoProcessor:
             console.print(f"[yellow]Warning: Could not detect black bars: {str(e)}[/yellow]")
             return None
 
-    def convert_hdr_to_sdr(self, input_file, output_file, encoding_preset, crop_values=None):
-        """Convert HDR to SDR using ffmpeg"""
-        try:
-            filters = []
-            
-            # HDR to SDR conversion filters
-            filters.extend([
-                'zscale=t=linear:npl=203',
-                'format=gbrpf32le',
-                'tonemap=tonemap=reinhard:desat=0',
-                'zscale=p=709:t=709:m=709:r=limited',
-                'dither=error_diffusion',
-                'format=yuv420p',
-                'sidedata=delete'
-            ])
-            
-            # Add crop filter if needed
-            if crop_values:
-                filters.append(crop_values)
-            
-            filter_string = ','.join(filters)
-            
-            cmd = [
-                '-i', input_file,
-                '-vf', filter_string,
-                '-threads', '0',
-                '-row-mt', '1',
-                '-movflags', '+faststart',
-                '-tune', 'fastdecode'
-            ]
-            
-            # Add encoding preset parameters
-            cmd.extend(encoding_preset.split())
-            
-            # Add output file
-            cmd.append(str(output_file))
-            
-            # Use ffpb instead of subprocess
-            ffpb.main(argv=cmd)
-            
-        except Exception as e:
-            raise Exception(f"FFmpeg error: {e}")
-
     def convert_video(self, input_file, output_file, encoding_preset, crop_values=None):
         """Convert video without HDR conversion"""
         try:
@@ -538,7 +693,7 @@ class VideoProcessor:
                 cmd.extend(['-vf', f'crop={w}:{h}:{x}:{y}'])
             
             cmd.extend(encoding_preset.split())
-            cmd.extend(['-c:a', 'aac', '-b:a', '384k'])
+            cmd.extend(['-c:a', 'aac', '-b:a', '576k'])
             cmd.append(str(output_file))
 
             ffpb.main(argv=cmd[1:])
@@ -633,7 +788,7 @@ class VideoProcessor:
                 selected_movie = next(m for m in movies if m['title'] == answer['movie'])
                 details = self.get_movie_details(selected_movie['url'])
             
-            console.print("\n[bold blue]═══ Movie Details ════════[/bold blue]")
+            console.print("\n[bold blue]══ Movie Details ════════[/bold blue]")
             if "Error" in details:
                 console.print(f"[red]Error retrieving details: {details['Error']}[/red]")
             else:
@@ -1052,161 +1207,150 @@ class VideoProcessor:
                 self.check_installations()
             else:
                 return
-            
+
+
     def set_preset(self):
-            """Configure encoding preset settings with advanced options"""
-            try:
-                self.clear_screen()
+        try:
+            self.clear_screen()
+            
+            # Get input source file
+            questions = [
+                inquirer.Text(
+                    'input_file',
+                    message='Drag & drop source video file (or enter path)',
+                    validate=lambda _, x: Path(self.strip_quotes(x)).exists()
+                ),
+                inquirer.Confirm(
+                    'auto_crop',
+                    message='Enable automatic black bar detection?',
+                    default=True
+                ),
+                inquirer.Confirm(
+                    'tonemap',
+                    message='Enable HDR to SDR conversion?',
+                    default=False
+                )
+            ]
+            
+            answers = inquirer.prompt(questions)
+            if not answers:
+                return
+            
+            # Clean up input path
+            input_file = Path(self.strip_quotes(answers['input_file'])).resolve()
+
+            # Get output filename (removed validation since we're creating a new file)
+            name_question = [
+                inquirer.Text('output_name',
+                    message='Enter output filename (without extension)'
+                )
+            ]
+            
+            name_answer = inquirer.prompt(name_question)
+            if not name_answer:
+                return
+            
+            # Preset selection
+            preset_question = [
+                inquirer.List('preset',
+                    message='Select encoding preset:',
+                    choices=[
+                        '411 Clarity Pro (For High Bitrate)',
+                        '411 Stream (Web Optimized)',
+                        '411 Grain Pro (For High Bitrate)',
+                        '411 Grain Stream (Web Optimized)',
+                        'Custom Encode (Admin Only)'
+                    ]
+                )
+            ]
+            
+            preset_answer = inquirer.prompt(preset_question)
+            if not preset_answer:
+                return
+            
+            # Define preset parameters
+            presets = {
+                '411 Clarity Pro (For High Bitrate)': '-c:v libx265 -preset medium -crf 18 -x265-params profile=main10',
+                '411 Stream (Web Optimized)': '-c:v libx265 -preset medium -crf 20 -x265-params profile=main10',
+                '411 Grain Pro (For High Bitrate)': '-c:v libx265 -preset medium -crf 16 -x265-params profile=main10:grain=8',
+                '411 Grain Stream (Web Optimized)': '-c:v libx265 -preset medium -crf 18 -x265-params profile=main10:grain=6'
+            }
+
+            # Handle custom preset
+            if preset_answer['preset'] == 'Custom Encode (Admin Only)':
+                password = inquirer.Password('password',
+                    message='Enter admin password'
+                ).execute()
                 
-                # Get input source file
-                questions = [
-                    inquirer.Path('input_file',
-                        message='Select source video file',
-                        exists=True,
-                        path_type=inquirer.Path.FILE
-                    ),
-                    inquirer.Confirm('auto_crop',
-                        message='Enable automatic black bar detection?',
-                        default=True
-                    )
-                ]
-                
-                answers = inquirer.prompt(questions)
-                if not answers:
+                if password != '114':
+                    console.print("[red]Invalid password![/red]")
+                    input("\nPress Enter to continue...")
                     return
                 
-                # Analyze source file
-                probe = ffmpeg.probe(answers['input_file'])
-                video_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
-                audio_streams = [stream for stream in probe['streams'] if stream['codec_type'] == 'audio']
-                
-                # Check for HDR
-                is_hdr = ('color_transfer' in video_stream and 'smpte2084' in video_stream['color_transfer'].lower()) or \
-                        ('color_primaries' in video_stream and 'bt2020' in video_stream['color_primaries'].lower())
-                        
-                # Find 5.1 audio track
-                surround_track = next((
-                    stream for stream in audio_streams 
-                    if stream.get('channels', 0) == 6
-                ), None)
-                
-                # Get crop values if requested
-                crop_values = None
-                if answers['auto_crop']:
-                    console.print("[cyan]Analyzing video for black bars...[/cyan]")
-                    crop_values = self.detect_black_bars(answers['input_file'])
-                    if crop_values:
-                        w, h, x, y = crop_values
-                        console.print(f"[green]Detected crop dimensions: {w}x{h}[/green]")
-                
-                # Get CPU thread count
-                cpu_threads = psutil.cpu_count(logical=False)
-                
-                # Get output filename
-                name_question = [
-                    inquirer.Text('output_name',
-                        message='Enter output filename (without extension)',
-                        validate=lambda _, x: bool(x.strip())
-                    )
-                ]
-                
-                name_answer = inquirer.prompt(name_question)
-                if not name_answer:
-                    return
-                
-                # Preset selection
-                preset_question = [
-                    inquirer.List('preset',
-                        message='Select encoding preset:',
-                        choices=[
-                            '411 Clarity Pro (For High Bitrate)',
-                            '411 Stream (Web Optimized)',
-                            '411 Grain Pro (High Bitrate)',
-                            '411 Grain Stream (For Web Optimized)',
-                            'Custom Encode (Admin Only)'
-                        ]
-                    )
-                ]
-                
-                preset_answer = inquirer.prompt(preset_question)
-                if not preset_answer:
-                    return
-                
-                # Handle admin preset
-                if preset_answer['preset'] == 'Custom Encode (Admin Only)':
-                    password = inquirer.Password('password',
-                        message='Enter admin password'
-                    ).execute()
-                    
-                    if password != '114':
-                        console.print("[red]Invalid password![/red]")
-                        input("\nPress Enter to continue...")
-                        return
-                    
-                    custom_cmd = inquirer.Text('command',
-                        message='Enter custom FFmpeg parameters'
-                    ).execute()
-                    
-                    encoding_params = custom_cmd
-                else:
-                    # Define preset parameters
-                    presets = {
-                        '411 Clarity Pro (For High Bitrate)': '-c:v libx265 -preset medium -crf 18 -x265-params profile=main10',
-                        '411 Stream (Web Optimized)': '-c:v libx265 -preset medium -crf 20 -x265-params profile=main10',
-                        '411 Grain Pro (For High Bitrate)': '-c:v libx265 -preset medium -crf 16 -x265-params profile=main10:grain=8',
-                        '411 Grain Stream (Web Optimized)': '-c:v libx265 -preset medium -crf 18 -x265-params profile=main10:grain=6'
-                    }
-                    encoding_params = presets[preset_answer['preset']]
-                
-                # Build the complete FFmpeg command
-                ffmpeg_base = f'ffmpeg -i "$_" -threads {cpu_threads} '
-                
-                # Add crop if detected
+                encoding_params = inquirer.Text('command',
+                    message='Enter custom FFmpeg parameters'
+                ).execute()
+            else:
+                encoding_params = presets[preset_answer['preset']]
+
+            # Get CPU thread count
+            cpu_threads = psutil.cpu_count(logical=False)
+            
+            # Build the base FFmpeg command
+            ffmpeg_base = f'ffmpeg -i "$_" -threads {cpu_threads} '
+            
+            # Initialize filter string
+            filters = []
+            
+            # Add crop if requested
+            if answers['auto_crop']:
+                crop_values = self.detect_black_bars(input_file)
                 if crop_values:
                     w, h, x, y = crop_values
-                    ffmpeg_base += f'-vf "crop={w}:{h}:{x}:{y}" '
-                
-                # Add HDR to SDR conversion if needed
-                if is_hdr:
-                    ffmpeg_base += '-vf "zscale=t=linear:npl=100,tonemap=tonemap=mobius,zscale=t=bt709:m=bt709:r=tv" '
-                
-                # Add audio processing for 5.1 to stereo conversion
-                if surround_track:
-                    ffmpeg_base += f'-af "pan=stereo|c0=FC|c1=FC" -c:a aac -b:a 576k '
-                else:
-                    ffmpeg_base += '-c:a aac -b:a 576k '
-                
-                # Add encoding parameters
-                ffmpeg_base += f'{encoding_params} '
-                
-                # Setup directories
-                scenepacks_dir = self.base_dir / 'scenepacks'
-                scenepacks_dir.mkdir(exist_ok=True)
-                
-                # Complete command with output
-                output_path = scenepacks_dir / f"{name_answer['output_name']}.mp4"
-                ffmpeg_command = f'powershell.exe -c "Get-ChildItem \\"C:\\DMFS\\virtual\\*.avi\\" | ForEach-Object {{ {ffmpeg_base} \\"\\"\\"{output_path}\\"\\"\\" }}"'
-                
-                # Set registry values
-                ps_script = f'''
-                Set-ItemProperty -Path "HKCU:\\Software\\DebugMode\\FrameServer" -Name "runCommandOnFsStart" -Value 1 -Type DWord
-                Set-ItemProperty -Path "HKCU:\\Software\\DebugMode\\FrameServer" -Name "endAfterRunningCommand" -Value 1 -Type DWord
-                Set-ItemProperty -Path "HKCU:\\Software\\DebugMode\\FrameServer" -Name "pcmAudioInAvi" -Value 1 -Type DWord
-                Set-ItemProperty -Path "HKCU:\\Software\\DebugMode\\FrameServer" -Name "commandToRunOnFsStart" -Value '{ffmpeg_command}'
-                '''
-                
-                result = subprocess.run(['powershell', '-Command', ps_script], capture_output=True, text=True)
-                
-                if result.returncode != 0:
-                    raise Exception(f"PowerShell Error: {result.stderr}")
-                
-                console.print("[green]Preset configured successfully![/green]")
-                
-            except Exception as e:
-                console.print(f"[red]Error setting preset: {str(e)}[/red]")
+                    filters.append(f'crop={w}:{h}:{x}:{y}')
             
-            input("\nPress Enter to continue...")
-
+            # Add tonemapping if requested
+            if answers['tonemap']:
+                tonemap_filter = 'zscale=t=linear:npl=203,format=gbrpf32le,tonemap=reinhard:desat=0,zscale=p=709:t=709:m=709:r=limited:dither=error_diffusion,format=yuv420p,sidedata=delete'
+                filters.append(tonemap_filter)
+            
+            # Add filters to command if any exist
+            if filters:
+                ffmpeg_base += f'-vf "{",".join(filters)}" '
+            
+            # Add audio processing
+            ffmpeg_base += '-c:a aac -b:a 576k '
+            
+            # Add encoding parameters
+            ffmpeg_base += f'{encoding_params} '
+            
+            # Setup output path
+            scenepacks_dir = self.base_dir / 'scenepacks'
+            scenepacks_dir.mkdir(exist_ok=True)
+            output_path = scenepacks_dir / f"{name_answer['output_name']}.mp4"
+            
+            # Create complete PowerShell command
+            ffmpeg_command = f'powershell.exe -c "Get-ChildItem \\"C:\\DMFS\\virtual\\*.avi\\" | ForEach-Object {{ {ffmpeg_base} \\"\\"\\"{output_path}\\"\\"\\" }}"'
+            
+            # Set registry values
+            ps_script = f'''
+            Set-ItemProperty -Path "HKCU:\\Software\\DebugMode\\FrameServer" -Name "runCommandOnFsStart" -Value 1 -Type DWord
+            Set-ItemProperty -Path "HKCU:\\Software\\DebugMode\\FrameServer" -Name "endAfterRunningCommand" -Value 1 -Type DWord
+            Set-ItemProperty -Path "HKCU:\\Software\\DebugMode\\FrameServer" -Name "pcmAudioInAvi" -Value 1 -Type DWord
+            Set-ItemProperty -Path "HKCU:\\Software\\DebugMode\\FrameServer" -Name "commandToRunOnFsStart" -Value '{ffmpeg_command}'
+            '''
+            
+            result = subprocess.run(['powershell', '-Command', ps_script], capture_output=True, text=True)
+            
+            if result.returncode != 0:
+                raise Exception(f"PowerShell Error: {result.stderr}")
+            
+            console.print("[green]Preset configured successfully![/green]")
+            
+        except Exception as e:
+            console.print(f"[red]Error setting preset: {str(e)}[/red]")
+        
+        input("\nPress Enter to continue...")
 
     def edl_conform_menu(self):
         """Convert Premiere EDL to FFmpeg commands for segment extraction"""
@@ -1217,13 +1361,12 @@ class VideoProcessor:
             edl_export_dir = self.base_dir / 'EDL Export'
             edl_export_dir.mkdir(exist_ok=True)
             
-            # Get input EDL file
+            # Get input EDL file - Modified to handle drag & drop
             file_question = [
-                inquirer.Path(
+                inquirer.Text(
                     'edl_file',
-                    message='Enter path to EDL file',
-                    exists=True,
-                    path_type=inquirer.Path.FILE,
+                    message='Drag & drop EDL file (or enter path)',
+                    validate=lambda _, x: Path(self.strip_quotes(x)).exists()
                 )
             ]
             
@@ -1231,26 +1374,33 @@ class VideoProcessor:
             if not file_answer:
                 return
             
-            # Get source video file
+            # Clean up EDL path
+            edl_file = Path(self.strip_quotes(file_answer['edl_file']))
+            
+            # Get source video file - Modified to handle drag & drop
             source_question = [
-                inquirer.Path(
+                inquirer.Text(
                     'source_file',
-                    message='Select source video file',
-                    exists=True,
-                    path_type=inquirer.Path.FILE,
+                    message='Drag & drop source video file (or enter path)',
+                    validate=lambda _, x: Path(self.strip_quotes(x)).exists()
                 )
             ]
             source_answer = inquirer.prompt(source_question)
             if not source_answer:
                 return
-            source_file = Path(source_answer['source_file']).resolve()
+            
+            if platform.system() == "Windows":
+
+                source_file = Path(self.strip_quotes(source_answer['source_file'])).resolve()
+            else:
+                source_file = Path(self.strip_quotes(source_answer['source_file'])).resolve()
             
             # Get output name
             name_question = [
                 inquirer.Text(
                     'output_name',
                     message='Enter final output filename (without extension)',
-                    validate=lambda _, x: bool(x.strip()),
+                    validate=lambda _, x: Path(self.strip_quotes(x)).exists(),
                 )
             ]
             
@@ -1290,7 +1440,7 @@ class VideoProcessor:
                     parts = tc.split(':')
                     return len(parts) == 4 and all(part.isdigit() for part in parts)
 
-                with open(file_answer['edl_file'], 'r', encoding='utf-8') as f:
+                with open(edl_file, 'r', encoding='utf-8') as f:
                     lines = f.readlines()
 
                     for line in lines:
@@ -1404,6 +1554,35 @@ class VideoProcessor:
                 console.print(f"\n[green]Successfully created final video: {final_output.name}[/green]")
                 console.print(f"[dim]Location: {final_output}[/dim]")
 
+                # After successful EDL export, ask about proxy
+                proxy_question = [
+                    inquirer.Confirm('create_proxy',
+                        message='Would you like to create an H.264 proxy?',
+                        default=True
+                    )
+                ]
+                
+                proxy_answer = inquirer.prompt(proxy_question)
+                if proxy_answer and proxy_answer['create_proxy']:
+                    final_output = edl_export_dir / f"{name_answer['output_name']}.mp4"
+                    proxy_output = self.base_dir / 'proxies' / f"{name_answer['output_name']}_proxy.mp4"
+                    
+                    ffmpeg_cmd = (
+                        f'ffpb -i "{final_output}" '
+                        f'-c:v libx264 -preset fast -crf 23 '
+                        f'-c:a aac -b:a 576k '
+                        f'"{proxy_output}"'
+                    )
+                    
+                    # Launch new terminal window based on OS
+                    if platform.system() == "Windows":
+                        subprocess.Popen(['start', 'cmd', '/k', ffmpeg_cmd], shell=True)
+                    else:  # macOS
+                        apple_script = (
+                            f'tell application "Terminal" to do script "{ffmpeg_cmd}"'
+                        )
+                        subprocess.run(['osascript', '-e', apple_script])
+
             except Exception as e:
                 console.print(f"[red]Error: {str(e)}[/red]")
 
@@ -1421,51 +1600,13 @@ class VideoProcessor:
             console.print(f"[yellow]Warning: Timecode conversion error: {str(e)}[/yellow]")
             return 0
 
-    def watch_for_new_files(self):
-        """Watch scenepacks and EDL Export directories for new files and create proxies."""
-        scenepacks_dir = self.base_dir / 'scenepacks'
-        edl_export_dir = self.base_dir / 'EDL Export'
-        watched_dirs = [scenepacks_dir, edl_export_dir]
-
-        while True:
-            for directory in watched_dirs:
-                for file in directory.iterdir():
-                    if file.is_file() and self.is_file_ready(file):
-                        self.create_h264_proxy(file)
-            time.sleep(5)  # Check every 5 seconds
-
-    def is_file_ready(self, file_path):
-        """Check if file size hasn't changed for 5 seconds."""
-        initial_size = file_path.stat().st_size
-        time.sleep(5)
-        return initial_size == file_path.stat().st_size
-
-    def create_h264_proxy(self, input_file):
-        """Create a H.264 proxy with YouTube-like quality."""
+    def is_valid_timecode(self, tc):
+        """Validate timecode format"""
         try:
-            output_file = self.base_dir / 'proxies' / f"{input_file.stem}_proxy.mp4"
-            cmd = [
-                'ffpb',
-                '-i', str(input_file),
-                '-c:v', 'libx264',
-                '-preset', 'fast',
-                '-crf', '23',  # Adjust CRF for YouTube-like quality
-                '-c:a', 'aac',
-                '-b:a', '128k',
-                '-threads', str(psutil.cpu_count(logical=True) - 1),  # Use all available CPU threads
-                str(output_file)
-            ]
-            # Run FFmpeg command silently
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except Exception as e:
-            # Optionally log the error to a file instead of printing
-            with open('error_log.txt', 'a') as log_file:
-                log_file.write(f"Error creating proxy for {input_file.name}: {str(e)}\n")
-
-    def start_watching(self):
-        """Start watching directories in a separate thread."""
-        watcher_thread = threading.Thread(target=self.watch_for_new_files, daemon=True)
-        watcher_thread.start()
+            parts = tc.split(':')
+            return len(parts) == 4 and all(part.isdigit() for part in parts)
+        except:
+            return False
 
 def is_admin():
     """Check if the script is running with admin privileges"""
@@ -1512,7 +1653,6 @@ def main():
 
         # Normal menu flow
         processor = VideoProcessor()
-        processor.start_watching()  # Start watching for new files
         processor.display_main_menu()
     except KeyboardInterrupt:
         print("\n")  # Add a newline for cleaner exit
