@@ -43,11 +43,25 @@ STANDARD_RESOLUTIONS = {
     }
 }
 
+# Define color constants to match C++ theme
+COLORS = {
+    'ERROR': '#FF0000',  # Matches COLOR_ERROR
+    'SUCCESS': '#00FF00',  # Matches COLOR_SUCCESS
+    'HEADER': '#FFFFFF',  # Matches COLOR_HEADER
+    'DECORATION': '#FFFF00',  # Matches COLOR_DECORATION
+    'CYAN': '#00FFFF',  # Matches COLOR_CYAN
+    'MAGENTA': '#FF00FF',  # Matches COLOR_MAGENTA
+    'YELLOW': '#FFFF00',  # Matches COLOR_YELLOW
+    'DIM': '#808080',  # Matches COLOR_DIM
+    'BRIGHT_BLUE': '#0000FF',  # Matches COLOR_BRIGHT_BLUE
+}
+
 def generate_usage_bars():
     """Generate and display system usage bars"""
     bar_length = 30
-    default_bar_color = "#9656ce"
-    high_usage_color = "#FF0000"
+    default_bar_color = COLORS['MAGENTA']
+    high_usage_color = COLORS['ERROR']
+    dim_color = COLORS['DIM']
     
     # Get memory and CPU usage
     mem = psutil.virtual_memory()
@@ -58,20 +72,19 @@ def generate_usage_bars():
     mem_bar_color = default_bar_color if mem_usage <= 90 else high_usage_color
     cpu_bar_color = default_bar_color if cpu_usage <= 90 else high_usage_color
     
-    # Generate memory bar
+    # Generate memory bar with enhanced styling
+    console.print(f"[{COLORS['CYAN']}]Mem% -= [/]", end="")
     mem_filled = f"[{mem_bar_color}]/[/{mem_bar_color}]" * int(bar_length * mem_usage // 100)
-    mem_empty = "[white]/[/white]" * (bar_length - int(bar_length * mem_usage // 100))
-    mem_bar = f"[ {mem_filled}{mem_empty} ]"
+    mem_empty = f"[{dim_color}] [/{dim_color}]" * (bar_length - int(bar_length * mem_usage // 100))
+    console.print(f"[{mem_filled}{mem_empty}]", end="")
+    console.print(f"[{COLORS['BRIGHT_BLUE']}] =- {mem_usage:.2f}%[/]\n")
     
-    # Generate CPU bar
+    # Generate CPU bar with enhanced styling
+    console.print(f"[{COLORS['CYAN']}]CPU% -= [/]", end="")
     cpu_filled = f"[{cpu_bar_color}]/[/{cpu_bar_color}]" * int(bar_length * cpu_usage // 100)
-    cpu_empty = "[white]/[/white]" * (bar_length - int(bar_length * cpu_usage // 100))
-    cpu_bar = f"[ {cpu_filled}{cpu_empty} ]"
-    
-    # Display bars
-    percentage_color = "#5865F2"
-    console.print(f"Mem% -= {mem_bar} =- [bold {percentage_color}]{mem_usage:.2f}%[/bold {percentage_color}]")
-    console.print(f"CPU% -= {cpu_bar} =- [bold {percentage_color}]{cpu_usage:.2f}%[/bold {percentage_color}]")
+    cpu_empty = f"[{dim_color}] [/{dim_color}]" * (bar_length - int(bar_length * cpu_usage // 100))
+    console.print(f"[{cpu_filled}{cpu_empty}]", end="")
+    console.print(f"[{COLORS['BRIGHT_BLUE']}] =- {cpu_usage:.2f}%[/]\n")
 
 def clear_screen():
     """Clear the terminal screen."""
@@ -216,21 +229,21 @@ def main():
         # Add usage bar display
         generate_usage_bars()
         
-        # Add spacing and decorative elements
-        console.print("\n[bright_black]═══════════════════════════════════════════════[/bright_black]")
+        # Add decorative elements matching C++ style
+        console.print(f"\n[{COLORS['DIM']}]═══════════════════════════════════════════════[/]\n")
         
         # Display welcome message with enhanced styling
         console.print(Panel.fit(
-            "[bold blue]Blu-ray.com Search Tool[/bold blue]\n"
-            "[cyan]Technical Specifications Lookup[/cyan]\n"
-            "         [dim]Version 1.0[/dim]",
-            title="[bold white]411[bold blue]Search[/bold blue][/bold white]",
+            f"[bold {COLORS['BRIGHT_BLUE']}]Blu-ray.com Search Tool[/]\n"
+            f"[{COLORS['CYAN']}]Technical Specifications Lookup[/]\n"
+            f"[{COLORS['DIM']}]         Version 1.0[/]",
+            title=f"[bold white]411[bold {COLORS['BRIGHT_BLUE']}]Search[/][/]",
             border_style="blue",
             padding=(1, 2),
-            subtitle="[dim]Creator Edition[/dim]"
+            subtitle=f"[{COLORS['DIM']}]Creator Edition[/]"
         ))
         
-        console.print("[bright_black]═══════════════════════════════════════════════[/bright_black]\n")
+        console.print(f"[{COLORS['DIM']}]═══════════════════════════════════════════════[/]\n")
         
         questions = [
             inquirer.Text('movie_title',
